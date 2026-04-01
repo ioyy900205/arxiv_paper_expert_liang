@@ -9,6 +9,7 @@ requirements:
     - requests
     - feedparser
     - beautifulsoup4
+    - pdfminer.six
 environment_variables:
   - name: ARXIV_API_BASE
     default: http://export.arxiv.org/api/query
@@ -37,10 +38,11 @@ network_access: true
 
 ```
 scripts/
-├── search.py      # 搜索功能：按主题/分类/时间搜索论文
-├── extractor.py   # 信息提取：从搜索结果中提取元信息
-├── analyzer.py    # AI 分析：调用 anan_01 agent 分析论文
-└── summarizer.py  # 总结生成：整合信息生成结构化简报
+├── search.py          # 搜索功能：按主题/分类/时间搜索论文
+├── extractor.py       # 信息提取：从搜索结果中提取元信息
+├── arxiv_content.py   # 内容抓取：HTML 优先 + PDF 回退获取正文
+├── analyzer.py        # AI 分析：调用 anan_01 agent 分析论文
+└── summarizer.py      # 总结生成：整合信息生成结构化简报
 ```
 
 ## 典型使用触发
@@ -78,6 +80,35 @@ scripts/
 - arXiv ID
 - PDF 链接
 - 更新日期 (updated)
+
+### 2.1 内容抓取（arxiv_content.py）
+
+通过 `arxiv_content.py` 获取论文全文，策略如下：
+
+| 来源 | 优先级 | 备注 |
+|------|--------|------|
+| HTML 版本 | 高 | `https://arxiv.org/html/{id}` |
+| PDF 版本 | 低（回退） | 当 HTML 不存在时自动使用 |
+
+输出 JSON 每条记录增加三个字段：
+- `content` — 正文纯文本
+- `html_url` — 实际来源 URL（HTML 或 PDF）
+- `content_source` — 来源标识（`html` / `pdf` / `none`）
+
+正文末尾的参考文献节会被自动去除（通过关键词 `References`、`Bibliography`、`Acknowledgment` 检测）。
+
+```bash
+# 处理前 3 条
+python scripts/arxiv_content.py results/arxiv_results.json
+
+# 指定条数
+python scripts/arxiv_content.py results/arxiv_results.json -n 10 -o results/content.json
+
+# 全量处理
+python scripts/arxiv_content.py results/arxiv_results.json --full
+```
+
+依赖：`pip install requests beautifulsoup4 pdfminer.six`
 
 ### 3. 分析阶段（analyzer.py）
 
