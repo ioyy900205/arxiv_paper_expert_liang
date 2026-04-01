@@ -1,0 +1,16 @@
+{
+  "search": {
+    "topic": "cat:cs.SD AND (all:\"speech enhancement\" OR all:\"audio source separation\" OR all:\"voice activity detection\" OR all:\"speech dereverberation\" OR all:\"beamforming\" OR all:\"acoustic echo cancellation\" OR all:\"audio front-end\" OR all:\"audio preprocessing\" OR ti:\"speech\" OR ti:\"audio\" OR ti:\"voice\")",
+    "start_date": "2025-01-01",
+    "end_date": "2026-04-01",
+    "max_results": 200,
+    "page_size": 100
+  },
+  "output": {
+    "format": "json",
+    "filename": "arxiv_speech_frontend.json"
+  },
+  "request": {
+    "delay_seconds": 3
+  }
+}
