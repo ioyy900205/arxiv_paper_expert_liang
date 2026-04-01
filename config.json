@@ -8,9 +8,72 @@
   },
   "output": {
     "format": "json",
-    "filename": "arxiv_speech_frontend.json"
+    "filename": "arxiv_results.json"
   },
   "request": {
     "delay_seconds": 3
+  },
+  "keywords": {
+    "frontend": {
+      "title_core": [
+        "speech enhancement", "noise reduction", "echo cancellation",
+        "beamforming", "speech separation", "source separation",
+        "dereverberation", "dereverb", "voice activity detection",
+        "vad", "keyword spotting", "wake word",
+        "audio denoising", "speech denoising",
+        "speech quality", "audio quality",
+        "bandwidth extension", "endpointer",
+        "speech front-end", "audio front-end"
+      ],
+      "title_tools": [
+        "mel spectrogram", "mfcc", "feature extraction",
+        "filterbank", "fbank", "audio codec", "neural codec",
+        "room impulse response", "rir", "hrtf", "head-related",
+        "ambisonics", "binaural", "spatial audio",
+        "audio-visual segmentation", "wav2vec", "hubert",
+        "self-supervised speech", "speech representation",
+        "vocal tract", "articulatory inversion",
+        "speech segmentation", "phone classification",
+        "gesture recognition", "gesture detection",
+        "deepfake detection", "singing voice synthesis",
+        "video-to-audio", "text-to-audio",
+        "industrial fault", "acoustic fault",
+        "perceptual quality", "mos score",
+        "audio-visual", "audio visual"
+      ],
+      "summary_core": [
+        "speech enhancement", "noise reduction", "echo cancellation",
+        "beamforming", "speech separation", "source separation",
+        "dereverberation", "dereverb", "voice activity detection",
+        "vad", "keyword spotting", "wake word",
+        "audio denoising", "speech denoising",
+        "speech quality", "audio quality",
+        "bandwidth extension", "endpointer",
+        "speech front-end", "audio front-end"
+      ]
+    },
+    "backend": {
+      "context": [
+        "speech recognition", "speech synthesis", "tts",
+        "text-to-speech", "voice conversion",
+        "speaker verification", "speaker diarization",
+        "emotion recognition", "speech emotion",
+        "phoneme", "phonetic", "pronunciation", "stutter",
+        "dysarthric speech", "speech impairment", "clinical speech",
+        "language acquisition", "infant speech",
+        "simultaneous speech-to-speech"
+      ]
+    },
+    "audiollm": [
+      "large language model", "llm", "gpt-",
+      "multimodal llm", "audio language model",
+      "speech llm", "audio llm", "speech token", "semantic token",
+      "speechlm", "audiogpt", "salmonn", "qwen-audio",
+      "rlhf", "dpo", "instruction tuning", "fine-tuning llm",
+      "chain-of-thought", "cot reasoning", "reasoning chain",
+      "llm-based asr", "llm for speech", "llm for audio",
+      "llm-based tts", "llm-based speaker",
+      "gpt-4o", "gpt-4-turbo", "claude", "gemini"
+    ]
   }
 }

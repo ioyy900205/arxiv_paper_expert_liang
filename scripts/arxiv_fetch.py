@@ -4,17 +4,9 @@
 """
 按主题和时间范围抓取 arXiv 论文信息。
 
-支持两种运行方式：
-1. 命令行参数（覆盖配置文件）：
-   python arxiv_fetch.py --topic "diffusion model" --start-date "2026-01-01" --end-date "2026-03-31"
+  python arxiv_fetch.py --start-date 2026-01-01 --end-date 2026-03-31 --max-results 600 --split
 
-2. 配置文件（默认 config.json，与脚本同目录）：
-   python arxiv_fetch.py
-
-配置示例见 config.json，可自行修改 topic、日期范围等参数。
-
-依赖：
-pip install requests feedparser
+依赖：pip install requests feedparser
 """
 
 from __future__ import annotations
@@ -22,19 +14,19 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import os
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import feedparser
 import requests
 
 BASE_URL = "https://export.arxiv.org/api/query"
 
-_DEFAULT_KEYWORDS = {
+# 分类关键词默认（config.json 中 keywords 节会覆盖这些）
+_DEFAULT_KW = {
     "frontend": {
         "title_core": [
             "speech enhancement", "noise reduction", "echo cancellation",
@@ -73,452 +65,209 @@ _DEFAULT_KEYWORDS = {
             "speech front-end", "audio front-end",
         ],
     },
-    "backend": {
-        "context": [
-            "speech recognition", "speech synthesis", "tts",
-            "text-to-speech", "voice conversion",
-            "speaker verification", "speaker diarization",
-            "emotion recognition", "speech emotion",
-            "phoneme", "phonetic", "pronunciation", "stutter",
-            "dysarthric speech", "speech impairment", "clinical speech",
-            "language acquisition", "infant speech",
-            "simultaneous speech-to-speech",
-        ],
-    },
-    "audiollm": [
-        "large language model", "llm", "gpt-",
-        "multimodal llm", "audio language model",
-        "speech llm", "audio llm", "speech token", "semantic token",
-        "speechlm", "audiogpt", "salmonn", "qwen-audio",
-        "rlhf", "dpo", "instruction tuning", "fine-tuning llm",
-        "chain-of-thought", "cot reasoning", "reasoning chain",
-        "llm-based asr", "llm for speech", "llm for audio",
-        "llm-based tts", "llm-based speaker",
-        "gpt-4o", "gpt-4-turbo", "claude", "gemini",
-    ],
+    "backend": {"context": []},
+    "audiollm": [],
 }
 
-
-def load_keywords(kw_path: Path | None = None) -> dict:
-    """从 keywords.json 加载关键词配置，找不到时使用内置默认值。"""
-    if kw_path is None:
-        kw_path = Path(__file__).parent.parent / "keywords.json"
-    if kw_path.exists():
-        with open(kw_path, encoding="utf-8") as f:
-            return json.load(f)
-    return _DEFAULT_KEYWORDS
+# 全局关键词（main() 中从 config.json 加载后设置）
+_KW: dict = _DEFAULT_KW
 
 
-# 全局关键词配置（首次导入时加载）
-_keywords_cfg: dict = _DEFAULT_KEYWORDS
+def _resolve(cfg: dict, key: str, default: Any = None) -> Any:
+    for k in key.split("."):
+        if isinstance(cfg, dict) and k in cfg:
+            cfg = cfg[k]
+        else:
+            return default
+    return cfg
 
 
-def init_keywords(kw_path: Path | str | None = None) -> None:
-    """显式初始化关键词配置（可在运行时切换配置文件）。"""
-    global _keywords_cfg
-    if kw_path is None:
-        kw_path = Path(__file__).parent.parent / "keywords.json"
-    else:
-        kw_path = Path(kw_path) if isinstance(kw_path, str) else kw_path
-    _keywords_cfg = load_keywords(kw_path)
-
-
-def _kw_hits(text: str, keywords: list) -> bool:
-    for kw in keywords:
-        if kw in text:
-            return True
-    return False
+def _hits(text: str, kws: list) -> bool:
+    return any(kw in text for kw in kws)
 
 
 def classify_paper(title: str, summary: str) -> str:
-    """
-    三分类: frontend / backend / audiollm
+    """三分类: frontend / backend / audiollm（优先级递减）"""
+    tl, sl = title.lower(), summary.lower()
+    fe, be, al = _KW.get("frontend", {}), _KW.get("backend", {}), _KW.get("audiollm", [])
+    fe_tc = fe.get("title_core", _DEFAULT_KW["frontend"]["title_core"])
+    fe_tt = fe.get("title_tools", _DEFAULT_KW["frontend"]["title_tools"])
+    fe_sc = fe.get("summary_core", _DEFAULT_KW["frontend"]["summary_core"])
+    be_ct = be.get("context", [])
 
-    规则（优先级递减）：
-      1. 标题或摘要含 audiollm 关键词 → audiollm
-      2. 标题含 frontend 核心词 → frontend
-      3. 标题含 frontend 工具词 → 看摘要是否在 backend 上下文中
-      4. 摘要含 frontend 核心词 → frontend
-      5. 其余 → backend
-    """
-    title_lower = title.lower()
-    summary_lower = summary.lower()
-
-    fe_cfg = _keywords_cfg.get("frontend", {})
-    be_cfg  = _keywords_cfg.get("backend",  {})
-    audiollm_kws = _keywords_cfg.get("audiollm", [])
-
-    fe_title_core   = fe_cfg.get("title_core",   _DEFAULT_KEYWORDS["frontend"]["title_core"])
-    fe_title_tools  = fe_cfg.get("title_tools",  _DEFAULT_KEYWORDS["frontend"]["title_tools"])
-    fe_summary_core = fe_cfg.get("summary_core", _DEFAULT_KEYWORDS["frontend"]["summary_core"])
-    be_context      = be_cfg.get("context",      _DEFAULT_KEYWORDS["backend"]["context"])
-
-    # 1. AudioLLM 优先
-    if _kw_hits(title_lower, audiollm_kws) or _kw_hits(summary_lower, audiollm_kws):
+    if _hits(tl, al) or _hits(sl, al):
         return "audiollm"
-
-    # 2. 标题含前端核心词 → 前端
-    if _kw_hits(title_lower, fe_title_core):
+    if _hits(tl, fe_tc):
         return "frontend"
-
-    # 3. 标题含前端工具词 → 看摘要是否在 backend 上下文中
-    if _kw_hits(title_lower, fe_title_tools):
-        if _kw_hits(summary_lower, be_context):
-            return "backend"
+    if _hits(tl, fe_tt):
+        return "backend" if _hits(sl, be_ct) else "frontend"
+    if _hits(sl, fe_sc):
         return "frontend"
-
-    # 4. 摘要含前端核心词 → 前端
-    if _kw_hits(summary_lower, fe_summary_core):
-        return "frontend"
-
     return "backend"
-DEFAULT_CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
 
 
-def find_config() -> Path:
-    """优先使用 --config 指定路径，否则依次查找：./config.json、../config.json（相对于脚本目录）"""
-    return Path(DEFAULT_CONFIG)
+def _config_path() -> Path:
+    return Path(__file__).parent.parent / "config.json"
 
 
-def load_config(config_path: Path) -> Dict[str, Any]:
-    if not config_path.exists():
-        raise FileNotFoundError(f"配置文件不存在: {config_path}")
-    with open(config_path, encoding="utf-8") as f:
+def load_config(path: Path) -> dict:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
-def parse_args(args: List[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Fetch arXiv papers by topic and date range.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
-    )
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=find_config(),
-        help="配置文件路径（默认：脚本目录的 ../config.json）",
-    )
-    parser.add_argument(
-        "--topic",
-        help='主题或 arXiv 查询表达式，例如 "diffusion model" 或 \'cat:cs.CL AND all:"llm"\'',
-    )
-    parser.add_argument(
-        "--start-date",
-        help='起始日期，格式 YYYY-MM-DD，例如 "2026-01-01"',
-    )
-    parser.add_argument(
-        "--end-date",
-        help='结束日期，格式 YYYY-MM-DD，例如 "2026-03-31"',
-    )
-    parser.add_argument(
-        "--max-results",
-        type=int,
-        help="最多抓取多少篇论文",
-    )
-    parser.add_argument(
-        "--page-size",
-        type=int,
-        help="每次请求多少条，建议不要太大",
-    )
-    parser.add_argument(
-        "--output",
-        help="输出文件名（不含路径，文件将保存到 results/ 目录下）",
-    )
-    parser.add_argument(
-        "--format",
-        choices=["json", "csv"],
-        default="json",
-        help="输出格式，默认 json",
-    )
-    parser.add_argument(
-        "--split",
-        action="store_true",
-        help="是否将结果按前后端分成两个文件输出（frontend + backend）",
-    )
-    parser.add_argument(
-        "--keywords",
-        type=Path,
-        default=None,
-        help="关键词配置文件路径（默认：keywords.json）",
-    )
-    return parser.parse_args(args)
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Fetch arXiv papers.")
+    p.add_argument("--config", type=Path, default=_config_path())
+    p.add_argument("--topic")
+    p.add_argument("--start-date")
+    p.add_argument("--end-date")
+    p.add_argument("--max-results", type=int)
+    p.add_argument("--page-size", type=int)
+    p.add_argument("--output")
+    p.add_argument("--format", choices=["json", "csv"], default="json")
+    p.add_argument("--split", action="store_true")
+    return p.parse_args()
 
 
-def resolve_output_dir(config_path: Path) -> Path:
-    output_dir = config_path.parent / "results"
-    output_dir.mkdir(exist_ok=True)
-    return output_dir
-
-
-def resolve_config_value(key_path: str, config: Dict[str, Any], default: Any = None) -> Any:
-    keys = key_path.split(".")
-    val = config
-    for k in keys:
-        if isinstance(val, dict) and k in val:
-            val = val[k]
-        else:
-            return default
-    return val
-
-
-def validate_date(date_str: str) -> datetime:
-    try:
-        return datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-    except ValueError as exc:
-        raise ValueError(f"日期格式错误: {date_str}，应为 YYYY-MM-DD") from exc
-
-
-def to_arxiv_submitted_date(dt: datetime, end_of_day: bool = False) -> str:
-    if end_of_day:
-        dt = dt.replace(hour=23, minute=59)
-    else:
-        dt = dt.replace(hour=0, minute=0)
-    return dt.strftime("%Y%m%d%H%M")
-
-
-def build_search_query(topic: str, start_date: str, end_date: str) -> str:
-    start_dt = validate_date(start_date)
-    end_dt = validate_date(end_date)
-
-    if end_dt < start_dt:
+def build_query(topic: str, start: str, end: str) -> str:
+    sd = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    ed = datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    if ed < sd:
         raise ValueError("end-date 不能早于 start-date")
-
-    start_token = to_arxiv_submitted_date(start_dt, end_of_day=False)
-    end_token = to_arxiv_submitted_date(end_dt, end_of_day=True)
-
-    advanced_markers = ["all:", "ti:", "au:", "abs:", "cat:", "jr:", "co:", "rn:", "submittedDate:"]
-    if any(marker in topic for marker in advanced_markers):
-        topic_query = topic
-    else:
-        topic_query = f'all:"{topic}"'
-
-    date_query = f"submittedDate:[{start_token} TO {end_token}]"
-    return f"({topic_query}) AND {date_query}"
+    def fmt(dt, last=False):
+        return dt.strftime("%Y%m%d") + ("2359" if last else "0000")
+    markers = ["all:", "ti:", "au:", "cat:", "submittedDate:"]
+    q = topic if any(m in topic for m in markers) else f'all:"{topic}"'
+    return f"({q}) AND submittedDate:[{fmt(sd)} TO {fmt(ed, True)}]"
 
 
-def fetch_page(
-    search_query: str,
-    start: int,
-    page_size: int,
-    base_delay: float = 3.0,
-    max_retries: int = 5,
-) -> feedparser.FeedParserDict:
-    from urllib.parse import urlencode
-    params = {
-        "search_query": search_query,
-        "start": start,
-        "max_results": page_size,
-        "sortBy": "submittedDate",
-        "sortOrder": "descending",
-    }
-    url = f"{BASE_URL}?{urlencode(params)}"
-    headers = {
-        "User-Agent": "arxiv-topic-fetcher/1.0 (Python requests; contact: local-script)"
-    }
-
-    last_resp: Optional["requests.Response"] = None
-    for attempt in range(max_retries):
+def fetch(query: str, start: int, size: int, delay: float) -> list:
+    params = {"search_query": query, "start": start, "max_results": size,
+              "sortBy": "submittedDate", "sortOrder": "descending"}
+    url = f"{BASE_URL}?{requests.compat.urlencode(params)}"
+    for attempt in range(5):
         try:
-            resp = requests.get(url, headers=headers, timeout=60)
-            last_resp = resp
-            if resp.status_code == 429:
-                retry_after = float(resp.headers.get("Retry-After", base_delay * (2 ** attempt)))
-                print(f"  ⚠️  429 请求受限，等待 {retry_after:.0f}s 后重试（第 {attempt + 1}/{max_retries} 次）...")
-                time.sleep(retry_after)
+            r = requests.get(url, timeout=60,
+                              headers={"User-Agent": "arxiv-fetch/1.0"})
+            if r.status_code == 429:
+                t = float(r.headers.get("Retry-After", delay * 2 ** attempt))
+                print(f"  429，等待 {t:.0f}s...")
+                time.sleep(t)
                 continue
-            resp.raise_for_status()
-            return feedparser.parse(resp.text)
-        except requests.exceptions.RequestException as exc:
-            if attempt < max_retries - 1:
-                wait = base_delay * (2 ** attempt)
-                print(f"  ⚠️  网络错误: {exc}，{wait:.0f}s 后重试（第 {attempt + 1}/{max_retries} 次）...")
-                time.sleep(wait)
+            r.raise_for_status()
+            return feedparser.parse(r.text).entries
+        except Exception as e:
+            if attempt < 4:
+                time.sleep(delay * 2 ** attempt)
                 continue
             raise
 
-    # 所有重试均失败，最后一个响应转为异常
-    if last_resp is not None:
-        last_resp.raise_for_status()
 
-
-def extract_entry(entry: Any) -> Dict[str, Any]:
-    authors = ", ".join(author.name for author in getattr(entry, "authors", []))
-    categories = ", ".join(tag["term"] for tag in getattr(entry, "tags", [])) if hasattr(entry, "tags") else ""
-
-    pdf_url = ""
-    for link in getattr(entry, "links", []):
-        if getattr(link, "type", "") == "application/pdf":
-            pdf_url = link.href
-            break
-
-    arxiv_id = entry.id.split("/abs/")[-1] if hasattr(entry, "id") else ""
-
+def extract(entry) -> dict:
+    authors = ", ".join(a.name for a in getattr(entry, "authors", []))
+    cats = ", ".join(t["term"] for t in getattr(entry, "tags", []))
+    pdf = next((l.href for l in getattr(entry, "links", [])
+                 if l.get("type") == "application/pdf"), "")
     doi = ""
-    for identifier in getattr(entry, "arxiv_identifiers", []):
-        if identifier.startswith("doi:"):
-            doi = identifier[4:]
+    for ident in getattr(entry, "arxiv_identifiers", []):
+        if ident.startswith("doi:"):
+            doi = ident[4:]
             break
     if not doi:
-        for link in getattr(entry, "links", []):
-            if getattr(link, "title", "") == "doi":
-                doi = getattr(link, "href", "").strip()
+        for l in getattr(entry, "links", []):
+            if l.get("title") == "doi":
+                doi = l.get("href", "").strip()
                 break
-
-    category = classify_paper(
-        getattr(entry, "title", "").replace("\n", " ").strip(),
-        getattr(entry, "summary", "").replace("\n", " ").strip(),
-    )
-
+    def clean(v): return getattr(entry, v, "").replace("\n", " ").strip()
     return {
-        "arxiv_id": arxiv_id,
-        "title": getattr(entry, "title", "").replace("\n", " ").strip(),
+        "arxiv_id": entry.id.split("/abs/")[-1],
+        "title": clean("title"),
         "authors": authors,
-        "published": getattr(entry, "published", ""),
-        "updated": getattr(entry, "updated", ""),
-        "summary": getattr(entry, "summary", "").replace("\n", " ").strip(),
-        "primary_category": (
-            getattr(entry, "arxiv_primary_category", {}).get("term", "")
-            if hasattr(entry, "arxiv_primary_category")
-            else ""
-        ),
-        "categories": categories,
-        "entry_id": getattr(entry, "id", ""),
-        "pdf_url": pdf_url,
+        "published": clean("published"),
+        "updated": clean("updated"),
+        "summary": clean("summary"),
+        "primary_category": (getattr(entry, "arxiv_primary_category", {})
+                              .get("term", "") if hasattr(entry, "arxiv_primary_category") else ""),
+        "categories": cats,
+        "entry_id": entry.id,
+        "pdf_url": pdf,
         "doi": doi,
-        "category": category,
+        "category": classify_paper(clean("title"), clean("summary")),
     }
 
 
-def save_to_json(rows: List[Dict[str, Any]], output_path: Path) -> None:
-    with open(output_path, "w", encoding="utf-8") as f:
+def save_json(rows: list, path: Path) -> None:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(rows, f, ensure_ascii=False, indent=2)
 
 
-def save_to_csv(rows: List[Dict[str, Any]], output_path: Path) -> None:
+def save_csv(rows: list, path: Path) -> None:
     if not rows:
-        print("没有结果可写入。")
         return
-    fieldnames = [
-        "arxiv_id", "title", "authors", "published", "updated",
-        "primary_category", "categories", "entry_id", "pdf_url", "doi", "category",
-        "summary",
-    ]
-    with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
+    fields = ["arxiv_id", "title", "authors", "published", "updated",
+              "primary_category", "categories", "entry_id", "pdf_url", "doi", "category", "summary"]
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        w.writerows(rows)
 
 
 def main() -> None:
     args = parse_args()
+    cfg = load_config(args.config)
 
-    # 加载配置文件
-    try:
-        config = load_config(args.config)
-    except FileNotFoundError:
-        # 没有配置文件时使用空配置，仅依赖命令行参数
-        config = {}
+    global _KW
+    _KW = cfg.get("keywords", _DEFAULT_KW)
 
-    # 加载关键词配置
-    kw_path = args.keywords
-    if kw_path is None:
-        kw_path = Path(__file__).parent.parent / "keywords.json"
-    init_keywords(kw_path)
-    if kw_path.exists():
-        print(f"关键词配置: {kw_path} （可通过 --keywords 覆盖）")
-    else:
-        print("未找到 keywords.json，使用内置默认关键词。")
+    topic      = args.topic      or _resolve(cfg, "search.topic")
+    start_date = args.start_date or _resolve(cfg, "search.start_date")
+    end_date   = args.end_date   or _resolve(cfg, "search.end_date")
+    max_res    = args.max_results or _resolve(cfg, "search.max_results", 100)
+    page_size  = args.page_size  or _resolve(cfg, "search.page_size", 100)
+    delay      = _resolve(cfg, "request.delay_seconds", 3)
+    out_fmt    = args.format
+    out_name   = args.output      or _resolve(cfg, "output.filename", "arxiv_results.json")
+    out_dir    = args.config.parent / "results"
+    out_dir.mkdir(exist_ok=True)
 
-    # 命令行参数覆盖配置文件
-    topic = args.topic or resolve_config_value("search.topic", config)
-    start_date = args.start_date or resolve_config_value("search.start_date", config)
-    end_date = args.end_date or resolve_config_value("search.end_date", config)
-    max_results = args.max_results or resolve_config_value("search.max_results", config, 100)
-    page_size = args.page_size or resolve_config_value("search.page_size", config, 100)
-    output_format = args.format
-    output_filename = args.output or resolve_config_value("output.filename", config, "arxiv_results.json")
+    if not topic or not start_date or not end_date:
+        raise ValueError("缺少 topic 或日期参数，请检查 config.json 或使用命令行参数。")
 
-    if not topic:
-        raise ValueError("未指定搜索主题。请在配置文件 config.json 的 search.topic 中设置，或使用 --topic 参数。")
-    if not start_date or not end_date:
-        raise ValueError("未指定日期范围。请在配置文件中设置 start_date / end_date，或使用 --start-date / --end-date 参数。")
+    query = build_query(topic, start_date, end_date)
+    print(f"查询: {query}")
 
-    delay_seconds = resolve_config_value("request.delay_seconds", config, 3)
-
-    output_dir = resolve_output_dir(args.config)
-    output_filename = args.output or resolve_config_value("output.filename", config, "arxiv_results.json")
-
-    search_query = build_search_query(topic, start_date, end_date)
-    print(f"配置文件: {args.config}")
-    print(f"使用的 arXiv 查询：")
-    print(search_query)
-    print("-" * 80)
-
-    collected: List[Dict[str, Any]] = []
-    start = 0
-
-    while len(collected) < max_results:
-        remaining = max_results - len(collected)
-        current_page_size = min(page_size, remaining)
-
-        print(f"正在抓取 start={start}, page_size={current_page_size} ...")
-        feed = fetch_page(search_query, start, current_page_size, base_delay=delay_seconds)
-
-        entries = getattr(feed, "entries", [])
+    collected, start = [], 0
+    while len(collected) < max_res:
+        size = min(page_size, max_res - len(collected))
+        entries = fetch(query, start, size, delay)
         if not entries:
-            print("没有更多结果。")
             break
-
-        page_rows = [extract_entry(entry) for entry in entries]
-        collected.extend(page_rows)
-
-        print(f"本页抓取 {len(page_rows)} 条，累计 {len(collected)} 条。")
-
-        if len(entries) < current_page_size:
-            print("结果已经抓完。")
+        rows = [extract(e) for e in entries]
+        collected.extend(rows)
+        print(f"  start={start} +{len(rows)} = {len(collected)}")
+        if len(entries) < size:
             break
+        start += size
+        time.sleep(delay)
 
-        start += current_page_size
-        time.sleep(delay_seconds)
-
-    # --split 模式下按 category 分流输出
     if args.split:
-        frontend_rows = [r for r in collected if r.get("category") == "frontend"]
-        backend_rows  = [r for r in collected if r.get("category") == "backend"]
-        audiollm_rows = [r for r in collected if r.get("category") == "audiollm"]
-
-        stem = Path(output_filename).stem
-        paths = {
-            "frontend":  output_dir / f"{stem}_frontend.json",
-            "backend":   output_dir / f"{stem}_backend.json",
-            "audiollm":  output_dir / f"{stem}_audiollm.json",
-        }
-
-        for cat, rows in [("frontend", frontend_rows), ("backend", backend_rows), ("audiollm", audiollm_rows)]:
-            if output_format == "json":
-                save_to_json(rows, paths[cat])
-            else:
-                save_to_csv(rows, paths[cat])
-
-        print(f"\n前端论文 {len(frontend_rows)} 条  -> {paths['frontend']}")
-        print(f"后端论文 {len(backend_rows)} 条   -> {paths['backend']}")
-        print(f"AudioLLM  {len(audiollm_rows)} 条  -> {paths['audiollm']}")
+        stems = {c: list(filter(lambda r, c=c: r["category"] == c, collected))
+                 for c in ("frontend", "backend", "audiollm")}
+        stem = Path(out_name).stem
+        for cat, rows in stems.items():
+            p = out_dir / f"{stem}_{cat}.json"
+            (save_json if out_fmt == "json" else save_csv)(rows, p)
+            print(f"  {cat}: {len(rows)} -> {p}")
     else:
-        output_path = output_dir / output_filename
-        if output_format == "json":
-            save_to_json(collected, output_path)
-        else:
-            save_to_csv(collected, output_path)
-        print(f"\n完成，共保存 {len(collected)} 条到: {output_path}")
+        p = out_dir / out_name
+        (save_json if out_fmt == "json" else save_csv)(collected, p)
+        print(f"完成: {len(collected)} 条 -> {p}")
 
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n用户中断。")
         sys.exit(1)
     except Exception as e:
-        print(f"\n发生错误: {e}")
-        sys.exit(1)
+        sys.exit(str(e))
