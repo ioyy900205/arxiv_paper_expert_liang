@@ -34,69 +34,93 @@ import requests
 
 BASE_URL = "https://export.arxiv.org/api/query"
 
-FRONTEND_KEYWORDS = [
-    "speech enhancement", "noise reduction", "acoustic echo cancellation",
-    "echo cancellation", "beamforming", "microphone array", "speech separation",
-    "source separation", "dereverberation", "voice activity detection",
-    "vad", "audio preprocessing", "feature extraction", "mel spectrogram",
-    "mfcc", "asr front-end", "wake word", "keyword spotting", "bandwidth extension",
-    "audio codec", "neural codec", "speech front-end", "audio front-end",
-    "speech quality enhancement", "speech denoising", "denoising", "audio denoising",
-    "speech dereverb", "room reverb", "acoustic beamforming", "speech beamforming",
-    "endpointer", "voice purification", "speech representation",
-    "room impulse response", "rir", "hrtf", "head-related",
-    "ambisonics", "binaural", "spatial audio", "audio-visual segmentation",
-    "audio deepfake detection", "deepfake detection",
-    "filterbank", "fbank",
-    "audio quality assessment", "mos score", "perceptual quality",
-    "audio ssl", "self-supervised speech", "wav2vec", "hubert",
-    "audio retrieval", "audio tagging", "sound event detection",
-    "singing voice synthesis", "speech quality",
-    "text-to-audio synthesis", "video-to-audio",
-    "acoustic fault detection", "industrial fault",
-    "speech segmentation", "phone classification",
-    "gesture recognition", "gesture detection",
-]
+_DEFAULT_KEYWORDS = {
+    "frontend": {
+        "title_core": [
+            "speech enhancement", "noise reduction", "echo cancellation",
+            "beamforming", "speech separation", "source separation",
+            "dereverberation", "dereverb", "voice activity detection",
+            "vad", "keyword spotting", "wake word",
+            "audio denoising", "speech denoising",
+            "speech quality", "audio quality",
+            "bandwidth extension", "endpointer",
+            "speech front-end", "audio front-end",
+        ],
+        "title_tools": [
+            "mel spectrogram", "mfcc", "feature extraction",
+            "filterbank", "fbank", "audio codec", "neural codec",
+            "room impulse response", "rir", "hrtf", "head-related",
+            "ambisonics", "binaural", "spatial audio",
+            "audio-visual segmentation", "wav2vec", "hubert",
+            "self-supervised speech", "speech representation",
+            "vocal tract", "articulatory inversion",
+            "speech segmentation", "phone classification",
+            "gesture recognition", "gesture detection",
+            "deepfake detection", "singing voice synthesis",
+            "video-to-audio", "text-to-audio",
+            "industrial fault", "acoustic fault",
+            "perceptual quality", "mos score",
+            "audio-visual", "audio visual",
+        ],
+        "summary_core": [
+            "speech enhancement", "noise reduction", "echo cancellation",
+            "beamforming", "speech separation", "source separation",
+            "dereverberation", "dereverb", "voice activity detection",
+            "vad", "keyword spotting", "wake word",
+            "audio denoising", "speech denoising",
+            "speech quality", "audio quality",
+            "bandwidth extension", "endpointer",
+            "speech front-end", "audio front-end",
+        ],
+    },
+    "backend": {
+        "context": [
+            "speech recognition", "speech synthesis", "tts",
+            "text-to-speech", "voice conversion",
+            "speaker verification", "speaker diarization",
+            "emotion recognition", "speech emotion",
+            "phoneme", "phonetic", "pronunciation", "stutter",
+            "dysarthric speech", "speech impairment", "clinical speech",
+            "language acquisition", "infant speech",
+            "simultaneous speech-to-speech",
+        ],
+    },
+    "audiollm": [
+        "large language model", "llm", "gpt-",
+        "multimodal llm", "audio language model",
+        "speech llm", "audio llm", "speech token", "semantic token",
+        "speechlm", "audiogpt", "salmonn", "qwen-audio",
+        "rlhf", "dpo", "instruction tuning", "fine-tuning llm",
+        "chain-of-thought", "cot reasoning", "reasoning chain",
+        "llm-based asr", "llm for speech", "llm for audio",
+        "llm-based tts", "llm-based speaker",
+        "gpt-4o", "gpt-4-turbo", "claude", "gemini",
+    ],
+}
 
-BACKEND_KEYWORDS = [
-    "asr", "speech recognition", "speech synthesis",
-    "tts", "text-to-speech", "voice conversion", "speaker verification",
-    "speaker diarization", "emotion recognition", "prosody", "spoken language",
-    "speech-to-text", "dialogue system", "speech emotion", "speaker embedding",
-    "pitch tracking", "speech coding", "audio coding",
-    "phonetic", "phoneme", "pronunciation", "stutter",
-    "speech assessment", "pronunciation scoring", "language proficiency",
-    "speech representation learning", "speech ssl",
-    "groove", "music perception", "music generation",
-    "dysarthric speech", "pathological speech", "clinical speech",
-    "cough detection", "bowel sound",
-    "articulatory", "vocal tract",
-    "speech corpus", "speech dataset", "speech annotation",
-    "speaker recognition", "voice cloning",
-    "aphasic speech", "speech impairment",
-    "rhythm", "rhythmic",
-    "self-supervised speech model", "ssl model",
-    "wav2vec", "hubert", "speech pretrained model",
-    "language acquisition", "infant speech", "early language",
-    "simultaneous speech-to-speech", "s2s translation",
-]
 
-AUDIOLLM_KEYWORDS = [
-    # 明确的大型语言模型
-    "large language model", "llm", "gpt-", "chatgpt",
-    "multimodal llm", "audio language model",
-    # 明确的音频 LLM 架构/任务
-    "speech llm", "audio llm", "speech token", "semantic token",
-    "speechlm", "audiogpt", "salmonn", "qwen-audio",
-    # 明确的 LLM 训练/推理技术
-    "rlhf", "dpo", "instruction tuning", "fine-tuning llm",
-    "chain-of-thought", "cot reasoning", "reasoning chain",
-    # 语音相关的 LLM 应用
-    "llm-based asr", "llm for speech", "llm for audio",
-    "llm-based tts", "llm-based speaker",
-    # VLM / 视觉-语言模型（涉及音频时）
-    "gpt-4o", "gpt-4-turbo", "claude", "gemini",
-]
+def load_keywords(kw_path: Path | None = None) -> dict:
+    """从 keywords.json 加载关键词配置，找不到时使用内置默认值。"""
+    if kw_path is None:
+        kw_path = Path(__file__).parent.parent / "keywords.json"
+    if kw_path.exists():
+        with open(kw_path, encoding="utf-8") as f:
+            return json.load(f)
+    return _DEFAULT_KEYWORDS
+
+
+# 全局关键词配置（首次导入时加载）
+_keywords_cfg: dict = _DEFAULT_KEYWORDS
+
+
+def init_keywords(kw_path: Path | str | None = None) -> None:
+    """显式初始化关键词配置（可在运行时切换配置文件）。"""
+    global _keywords_cfg
+    if kw_path is None:
+        kw_path = Path(__file__).parent.parent / "keywords.json"
+    else:
+        kw_path = Path(kw_path) if isinstance(kw_path, str) else kw_path
+    _keywords_cfg = load_keywords(kw_path)
 
 
 def _kw_hits(text: str, keywords: list) -> bool:
@@ -112,68 +136,39 @@ def classify_paper(title: str, summary: str) -> str:
 
     规则（优先级递减）：
       1. 标题或摘要含 audiollm 关键词 → audiollm
-      2. 标题含 frontend 关键词（核心任务词：enhancement/separation/beamforming/dereverb）→ frontend
-      3. 摘要含 frontend 核心任务词（且不在 backend 核心任务上下文中）→ frontend
-      4. 其余 → backend
+      2. 标题含 frontend 核心词 → frontend
+      3. 标题含 frontend 工具词 → 看摘要是否在 backend 上下文中
+      4. 摘要含 frontend 核心词 → frontend
+      5. 其余 → backend
     """
     title_lower = title.lower()
     summary_lower = summary.lower()
 
+    fe_cfg = _keywords_cfg.get("frontend", {})
+    be_cfg  = _keywords_cfg.get("backend",  {})
+    audiollm_kws = _keywords_cfg.get("audiollm", [])
+
+    fe_title_core   = fe_cfg.get("title_core",   _DEFAULT_KEYWORDS["frontend"]["title_core"])
+    fe_title_tools  = fe_cfg.get("title_tools",  _DEFAULT_KEYWORDS["frontend"]["title_tools"])
+    fe_summary_core = fe_cfg.get("summary_core", _DEFAULT_KEYWORDS["frontend"]["summary_core"])
+    be_context      = be_cfg.get("context",      _DEFAULT_KEYWORDS["backend"]["context"])
+
     # 1. AudioLLM 优先
-    if _kw_hits(title_lower, AUDIOLLM_KEYWORDS):
-        return "audiollm"
-    if _kw_hits(summary_lower, AUDIOLLM_KEYWORDS):
+    if _kw_hits(title_lower, audiollm_kws) or _kw_hits(summary_lower, audiollm_kws):
         return "audiollm"
 
-    # 2. 标题含前端核心词 → 前端（无视摘要中的后端词）
-    FE_TITLE_CORE = [
-        "speech enhancement", "noise reduction", "echo cancellation",
-        "beamforming", "speech separation", "source separation",
-        "dereverberation", "dereverb", "voice activity detection",
-        "vad", "keyword spotting", "wake word",
-        "audio denoising", "speech denoising",
-        "speech quality", "audio quality",
-        "bandwidth extension", "endpointer",
-        "speech front-end", "audio front-end",
-    ]
-    if _kw_hits(title_lower, FE_TITLE_CORE):
+    # 2. 标题含前端核心词 → 前端
+    if _kw_hits(title_lower, fe_title_core):
         return "frontend"
 
     # 3. 标题含前端工具词 → 看摘要是否在 backend 上下文中
-    FE_TITLE_TOOLS = [
-        "mel spectrogram", "mfcc", "feature extraction",
-        "filterbank", "fbank", "audio codec", "neural codec",
-        "room impulse response", "rir", "hrtf", "head-related",
-        "ambisonics", "binaural", "spatial audio",
-        "audio-visual segmentation", "wav2vec", "hubert",
-        "self-supervised speech", "speech representation",
-        "vocal tract", "articulatory inversion",
-        "speech segmentation", "phone classification",
-        "gesture recognition", "gesture detection",
-        "deepfake detection", "singing voice synthesis",
-        "video-to-audio", "text-to-audio",
-        "industrial fault", "acoustic fault",
-        "perceptual quality", "mos score",
-        "audio-visual", "audio visual",
-    ]
-    if _kw_hits(title_lower, FE_TITLE_TOOLS):
-        # 若摘要主要在讨论 backend 任务（asr/synthesis/emotion等），则归 backend
-        BE_CONTEXT = [
-            "speech recognition", "speech synthesis", "tts",
-            "text-to-speech", "voice conversion",
-            "speaker verification", "speaker diarization",
-            "emotion recognition", "speech emotion",
-            "phoneme", "phonetic", "pronunciation", "stutter",
-            "dysarthric speech", "speech impairment", "clinical speech",
-            "language acquisition", "infant speech",
-            "simultaneous speech-to-speech",
-        ]
-        if _kw_hits(summary_lower, BE_CONTEXT):
+    if _kw_hits(title_lower, fe_title_tools):
+        if _kw_hits(summary_lower, be_context):
             return "backend"
         return "frontend"
 
-    # 4. 摘要含前端词（不考虑工具词）
-    if _kw_hits(summary_lower, FE_TITLE_CORE):
+    # 4. 摘要含前端核心词 → 前端
+    if _kw_hits(summary_lower, fe_summary_core):
         return "frontend"
 
     return "backend"
@@ -240,6 +235,12 @@ def parse_args(args: List[str] | None = None) -> argparse.Namespace:
         "--split",
         action="store_true",
         help="是否将结果按前后端分成两个文件输出（frontend + backend）",
+    )
+    parser.add_argument(
+        "--keywords",
+        type=Path,
+        default=None,
+        help="关键词配置文件路径（默认：keywords.json）",
     )
     return parser.parse_args(args)
 
@@ -418,6 +419,16 @@ def main() -> None:
     except FileNotFoundError:
         # 没有配置文件时使用空配置，仅依赖命令行参数
         config = {}
+
+    # 加载关键词配置
+    kw_path = args.keywords
+    if kw_path is None:
+        kw_path = Path(__file__).parent.parent / "keywords.json"
+    init_keywords(kw_path)
+    if kw_path.exists():
+        print(f"关键词配置: {kw_path} （可通过 --keywords 覆盖）")
+    else:
+        print("未找到 keywords.json，使用内置默认关键词。")
 
     # 命令行参数覆盖配置文件
     topic = args.topic or resolve_config_value("search.topic", config)
