@@ -1,254 +1,155 @@
 ---
-name: arxiv_paper_expert
-description: 面向中文自然语言的 arXiv 论文研究技能。用于把"看看最近有什么新论文""帮我找一下某个主题的论文""最近一周 XX 领域有哪些新工作"这类请求，转成可执行的论文搜索、信息提取与简要分析流程。
-author: liang
-version: 1.0.0
-requirements:
-  python: 3.8+
-  packages:
-    - requests
-    - feedparser
-    - beautifulsoup4
-    - pdfminer.six
-    - openai
-environment_variables:
-  - name: ARXIV_API_BASE
-    default: http://export.arxiv.org/api/query
-    description: arXiv API 地址
-network_access: true
+name: arxiv-paper-expert
+description: 面向中文自然语言的语音与音频深度学习 arXiv 论文检索、整理、分析与简报生成技能。用于处理“最近几天语音有什么新论文”“帮我整理 speech/audio/TTS/ASR/语音增强/语音分离/说话人/AudioLLM 方向论文”“给我一版最近语音论文的浓缩总结”这类请求；适合围绕 speech、audio、voice、TTS、ASR、speech enhancement、speech separation、speaker、audio deepfake、audio language model 等主题，执行搜索、全文抓取、LLM 分析、Markdown/HTML 报告生成，以及执行后摘要回复。
 ---
 
-# arxiv_paper_expert
+# arxiv-paper-expert
 
-面向中文自然语言的 arXiv 论文研究与简报生成技能。
+用于整理**语音相关深度学习论文**，尤其是最近几天 / 最近一周 / 指定时间范围内的 arXiv 新论文。
 
-## What this skill is for
+## 典型触发
 
-使用这个 skill 的典型场景：
+- 帮我看最近几天语音有什么新论文
+- 帮我整理最近一周 speech / audio / TTS / ASR 论文
+- 最近 AudioLLM 有什么新工作
+- 帮我生成一版语音论文简报
+- 把这批语音相关论文做成 HTML 和 Markdown
 
-- 找某个时间段内的某个主题论文列表
-- 找某个时间点/时间段内某个领域的新论文
-- 对一批论文做信息提取和整理
-- 调用 LLM 对论文做深度分析
-- 生成结构化论文简报
+## 默认范围
 
-## 模块架构
+优先把这个 skill 理解为：**语音、音频、说话人、语音生成、语音理解、AudioLLM 相关深度学习论文整理器**。
 
-```
-scripts/
-├── arxiv_fetch.py       # 论文搜索：按主题/分类/时间搜索
-├── arxiv_content.py     # 全文抓取：HTML 优先 + PDF 回退
-├── paper_analyzer.py    # LLM 分析：调用 MiniMax API 分析论文
-├── generate_report.py   # 报告生成：HTML/Markdown 格式报告
-├── run_pipeline.sh      # 完整流水线：一键执行全部
-└── test_llm.py         # LLM 测试：快速验证 API Key 可用性
-```
+常见主题包括：
+- speech
+- audio
+- voice
+- TTS / text-to-speech
+- ASR / speech recognition
+- speech enhancement
+- speech separation
+- speaker / diarization / verification
+- audio deepfake
+- audio language model / speech LLM
 
-## 典型使用触发
+## 执行流程
 
-- 帮我找一下最近有关 XXX 的论文
-- 最近一周有什么新的 LLM 论文？
-- 2024年3月份关于强化学习的论文
-- 帮我搜搜这个领域最近的工作
-- 帮我分析一下这批论文
-- 帮我生成论文简报
+按下面顺序执行：
 
-## 工作流程
+1. **搜索论文**
+   - 默认使用 `scripts/run_pipeline.sh`
+   - 典型命令：`bash scripts/run_pipeline.sh --step all --days 3 --full`
+   - 若只需搜索：`bash scripts/run_pipeline.sh --step fetch --days 7`
 
-### 完整流水线（推荐）
+2. **抓取全文**
+   - 默认读取：`results/arxiv_results.json`
+   - 生成：`results/arxiv_results_content.json`
 
-```bash
-# 进入项目目录
-cd arxiv_paper_expert_liang
+3. **做 LLM 分析**
+   - 默认读取：`results/arxiv_results_content.json`
+   - 生成：`results/arxiv_results_content_analysis.json`
 
-# 完整流程：搜索 → 抓取 → 分析 → 报告
-bash scripts/run_pipeline.sh
+4. **生成报告**
+   - 默认读取：`results/arxiv_results_content_analysis.json`
+   - 生成：
+     - `results/arxiv_results_content_report.md`
+     - `results/arxiv_results_content_report.html`
 
-# 仅搜索最近 7 天论文
-bash scripts/run_pipeline.sh --step fetch --days 7
+5. **执行后必须收尾**
+   - 读取本次新生成的 Markdown 报告
+   - 提炼一版可直接发送给用户的浓缩总结
+   - 附上自己的简短评价
+   - 通过消息告知用户，不要只说“文件已生成”
 
-# 仅抓取全文
-bash scripts/run_pipeline.sh --step content
+## 执行后默认回复模板
 
-# 分析前 10 篇论文
-bash scripts/run_pipeline.sh --step analyze -n 10
+完成一次标准执行后，默认按下面结构回复，除非用户明确要求别的格式：
 
-# 仅生成报告
-bash scripts/run_pipeline.sh --step report
+```markdown
+已完成最近 N 天 / 指定时间范围的语音相关论文整理。
 
-# 断点续传（跳过已分析）
-bash scripts/run_pipeline.sh --step analyze --resume
+**产出文件**
+- Markdown: `results/arxiv_results_content_report.md`
+- HTML: `results/arxiv_results_content_report.html`
 
-# 分析全部论文
-bash scripts/run_pipeline.sh --step analyze --full
-```
+**本次范围**
+- 时间范围：...
+- 论文总数：...
+- 分类分布：frontend X / backend Y / audiollm Z
 
-### 阶段说明
+**浓缩版结论**
+- 最值得优先看的 3-5 篇：...
+- 这一批论文的共同趋势：...
+- 哪些更偏方法创新，哪些更偏工程整合：...
 
-#### 阶段 1：搜索论文（arxiv_fetch.py）
-
-按主题、分类和时间范围搜索 arXiv 论文。
-
-```bash
-python scripts/arxiv_fetch.py --days 30                    # 最近 30 天
-python scripts/arxiv_fetch.py --start-date 2026-01-01 --end-date 2026-03-31 --max-results 600 --split
-```
-
-**功能特点：**
-- 自动分页获取
-- 429 限流自动等待重试
-- 三分类：frontend（语音前端）/ backend（语音后端）/ audiollm（音频大模型）
-- 支持 `--split` 输出三个分类文件
-
-**输出：** `results/arxiv_results.json`
-
-#### 阶段 2：全文抓取（arxiv_content.py）
-
-从 arXiv 获取论文全文，提取为纯文本。
-
-```bash
-python scripts/arxiv_content.py results/arxiv_results.json -n 3   # 前 3 篇
-python scripts/arxiv_content.py results/arxiv_results.json --full # 全部
+**我的评价**
+- 用 3-6 句话给出判断，不要只复述报告内容。
+- 可以直接说：这批论文整体偏扎实 / 偏热闹 / 偏生成 / 偏安全 / 偏工程。
+- 如果有明显最值得追踪的方向，也直接点出来。
 ```
 
-**功能特点：**
-- HTML 优先（可复制文本），PDF 回退
-- 自动版本回退（当前版本不可用时尝试其他版本）
-- 移除参考文献和致谢
-- 保留章节结构
+回复风格要求：
+- 先给结果，再给判断
+- 默认简洁，不写流水账
+- 不要只说“文件已生成”
+- 尽量给出明确偏好和取舍，而不是平均用力地罗列
 
-**输出：** `results/arxiv_results_content.json`
+## “最值得看”默认筛选标准
 
-#### 阶段 3：LLM 分析（paper_analyzer.py）
+当你需要从一批论文里挑出“最值得优先看”的 3-5 篇时，默认按下面标准排序和判断：
 
-调用 LLM 对论文进行深度分析，输出结构化的分析结果。
+### 优先项
 
-```bash
-python scripts/paper_analyzer.py results/arxiv_results_content.json -n 5      # 分析 5 篇
-python scripts/paper_analyzer.py results/arxiv_results_content.json --full    # 全量分析
-python scripts/paper_analyzer.py results/arxiv_results_content.json --concise # 精简模式
-```
+- **方法新意优先于纯工程堆料**
+  - 如果一篇论文只是把已有模块重新拼装、主要靠堆参数、堆数据或堆训练技巧提分，应降低优先级
+  - 如果一篇论文提出了新的问题建模方式、结构设计、训练视角、分析框架或评估思路，应提高优先级
 
-**分析模式：**
-- **详细分析**：10+ 个维度的深度评审（一句话总结、研究动机、核心亮点、反直觉发现、关键技术、实验结果、局限性、论文结论、适用场景、犀利点评）
-- **精简分析**：一句话总结
+- **跨方向迁移价值高的优先**
+  - 不只看它在单一 benchmark 上是否有效，还要看它的方法能否迁移到其他语音任务、音频任务或多模态任务
+  - 对 speech / audio / AudioLLM / 安全 / 生成 / 表征学习都可能有启发的方法，应优先推荐
 
-**断点续传：** 自动跳过已分析的论文，中断后可继续
+- **对语音主线问题有结构性推进的优先**
+  - 例如在 ASR、TTS、增强、分离、说话人建模、音频理解、音频安全等主线问题上，给出了明确的结构改进或范式改进
+  - 如果只是对已有主线做边角优化，优先级应更低
 
-**输出：** `results/arxiv_results_content_analysis.json`
+### 降权项
 
-#### 阶段 4：报告生成（generate_report.py）
+- **单纯刷指标但缺少洞察的降权**
+  - 如果论文主要卖点只是“某个 benchmark 上又涨了几点”，但看不出为什么有效、也没有新的分析或可迁移的设计，应降权
+  - 如果实验做得很满但核心思想薄弱，也不要因为表格好看就优先推荐
 
-将分析结果生成为 HTML 和 Markdown 格式的报告。
+### 结果表达要求
 
-```bash
-python scripts/generate_report.py                                      # 使用默认输入
-python scripts/generate_report.py results/arxiv_results_content_analysis.json  # 指定输入
-```
+在给“最值得看”推荐时，不要只列标题。要顺带说明：
+- 为什么它值得优先看
+- 它更偏方法创新、结构创新、问题定义创新，还是只是工程整合
+- 它是否可能影响其他方向，而不只是当前子任务
 
-**输出：**
-- `results/arxiv_results_content_report.html` - 浅色主题 HTML 报告
-- `results/arxiv_results_content_report.md` - 带目录的 Markdown 报告
+## 输出与覆盖规则
 
-**HTML 报告特点：**
-- 分类颜色标签
-- 目录导航
-- 响应式设计
-- 论文卡片可折叠
-- 回到顶部按钮
+默认输出都写入 `results/`，并且**直接覆盖同名文件**：
 
-## 输出文件格式
+- `results/arxiv_results.json`
+- `results/arxiv_results_content.json`
+- `results/arxiv_results_content_analysis.json`
+- `results/arxiv_results_content_report.md`
+- `results/arxiv_results_content_report.html`
 
-### arxiv_results.json
+含义：
+- 下次执行会覆盖这次结果
+- 对于“最近 N 天”的滚动追踪，这是合理默认行为
+- 如果需要保留历史快照，应手动另存一份
 
-```json
-[
-  {
-    "arxiv_id": "2604.01155v1",
-    "title": "论文标题",
-    "authors": "作者1, 作者2",
-    "published": "2026-04-01",
-    "summary": "摘要...",
-    "primary_category": "cs.SD",
-    "categories": "cs.SD, eess.AS",
-    "pdf_url": "https://arxiv.org/pdf/...",
-    "category": "frontend"
-  }
-]
-```
+## 关键脚本
 
-### arxiv_results_content.json
+- `scripts/arxiv_fetch.py`：搜索论文
+- `scripts/arxiv_content.py`：抓取全文（HTML 优先，PDF 回退）
+- `scripts/paper_analyzer.py`：LLM 分析
+- `scripts/generate_report.py`：生成 Markdown / HTML 报告
+- `scripts/run_pipeline.sh`：串联完整流程
 
-```json
-[
-  {
-    "arxiv_id": "2604.01155v1",
-    "title": "论文标题",
-    "authors": "作者1, 作者2",
-    "content": "论文全文内容...",
-    "html_url": "https://arxiv.org/html/...",
-    "content_source": "html",
-    "used_arxiv_id": "2604.01155v1"
-  }
-]
-```
+## 注意事项
 
-### arxiv_results_content_analysis.json
-
-```json
-[
-  {
-    "arxiv_id": "2604.01155v1",
-    "title": "论文标题",
-    "category": "frontend",
-    "analysis": {
-      "一句话总结": "...",
-      "研究动机": {"结论": "...", "展开": "..."},
-      "核心亮点": [{"描述": "...", "金句": "..."}, ...],
-      "反直觉发现": [{"发现": "...", "为何反直觉": "..."}, ...],
-      "关键技术": {"结论": "...", "展开": "..."},
-      "实验结果": {"结论": "...", "展开": "..."},
-      "局限性/缺陷": ["...", "..."],
-      "论文结论": {"结论": "...", "价值判断": "..."},
-      "适用场景": {"结论": "...", "边界条件": "..."},
-      "犀利点评": "..."
-    },
-    "mode": "detailed",
-    "model_used": "MiniMax-M2.7-highspeed",
-    "tokens_used": 12345
-  }
-]
-```
-
-## 配置说明
-
-### config.json
-
-```json
-{
-  "llm": {
-    "provider": "minimax",
-    "api_key": "your-api-key",
-    "base_url": "https://api.minimax.chat/v1",
-    "model": "MiniMax-M2.7-highspeed",
-    "max_tokens": 16384,
-    "temperature": 0.7
-  },
-  "search": {
-    "topic": "cat:cs.SD AND (all:\"speech enhancement\" OR ...)",
-    "start_date": "2025-01-01",
-    "end_date": "2026-04-01",
-    "max_results": 200
-  }
-}
-```
-
-## 依赖
-
-```
-requests>=2.28.0
-feedparser>=6.0.0
-beautifulsoup4>=4.11.0
-pdfminer.six>=20221105
-openai>=1.0.0
-```
+- 默认优先给用户一版**浓缩摘要 + 个人评价**，文件路径放在前面或后面都可以
+- 如果用户明确只要文件，再简化回复
+- 如果分析阶段发现旧文件干扰，应坚持使用本次流程生成的 `results/arxiv_results_content*.json`
+- 如果用户问“下次会不会覆盖结果”，答案是：**会，默认覆盖同名 results 文件**

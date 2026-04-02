@@ -23,16 +23,6 @@ from collections import defaultdict
 
 
 
-# ============ 配置 ============
-
-INPUT_FILE = Path(__file__).parent.parent / "results" / "analysis_5days.json"
-
-OUTPUT_HTML = Path(__file__).parent.parent / "results" / "paper_analysis_report.html"
-
-OUTPUT_MD = Path(__file__).parent.parent / "results" / "paper_analysis_report.md"
-
-
-
 # ============ Category 排序（前端 > LLM > 后端 > 其他）============
 
 CATEGORY_ORDER = ["frontend", "llm", "backend", "audiollm", "speech", "nlp", "cv", "multimodal"]
@@ -1148,8 +1138,8 @@ def generate_html_report(papers):
 
 def main():
     parser = argparse.ArgumentParser(description="生成 arXiv 论文分析报告")
-    parser.add_argument("input", nargs="?", default="results/analysis_5days.json",
-                        help="输入的 analysis JSON 文件（默认: results/analysis_5days.json）")
+    parser.add_argument("input", nargs="?", default="results/arxiv_results_content_analysis.json",
+                        help="输入的 analysis JSON 文件（默认: results/arxiv_results_content_analysis.json）")
     parser.add_argument("-o", "--output-dir", default="results",
                         help="输出目录（默认: results）")
     args = parser.parse_args()
@@ -1159,23 +1149,16 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if not input_file.exists():
-        # 尝试在 results 目录下查找最新的 analysis 文件
-        results_dir = Path("results")
-        if results_dir.exists():
-            analysis_files = sorted(results_dir.glob("analysis_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-            if analysis_files:
-                input_file = analysis_files[0]
-                print(f"未找到指定文件，自动使用最新分析结果: {input_file}")
-
-    if not input_file.exists():
         print(f"错误: 输入文件不存在: {input_file}")
         return
 
     # 确定输出文件名
-    if input_file.stem.startswith("analysis"):
-        output_name = input_file.stem.replace("analysis", "report")
+    if input_file.stem.endswith("_analysis"):
+        output_name = input_file.stem[:-len("_analysis")] + "_report"
+    elif input_file.stem.startswith("analysis"):
+        output_name = input_file.stem.replace("analysis", "report", 1)
     else:
-        output_name = "paper_analysis_report"
+        output_name = input_file.stem + "_report"
 
     output_html = output_dir / f"{output_name}.html"
     output_md = output_dir / f"{output_name}.md"

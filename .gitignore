@@ -23,5 +23,5 @@ cache/
 .DS_Store
 Thumbs.db
 
-# Large JSON results (optional - uncomment if you don't want to track them)
-# results/*.json
+# Generated results
+results/

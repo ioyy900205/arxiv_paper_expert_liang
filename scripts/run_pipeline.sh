@@ -187,17 +187,12 @@ run_content() {
 run_analyze() {
     separator "阶段 3: LLM 分析论文"
 
-    local input_file="results/content_test.json"
+    local input_file="results/arxiv_results_content.json"
 
     if [[ ! -f $input_file ]]; then
-        # 尝试查找其他内容文件
-        if [[ -f results/arxiv_results_content.json ]]; then
-            input_file="results/arxiv_results_content.json"
-        else
-            echo "错误: 未找到内容文件"
-            echo "请先运行全文抓取阶段，或确保 content_test.json 存在"
-            exit 1
-        fi
+        echo "错误: 未找到内容文件: $input_file"
+        echo "请先运行全文抓取阶段，生成与本次搜索对应的 content 文件"
+        exit 1
     fi
 
     # 计算可用论文数量
@@ -242,18 +237,16 @@ run_analyze() {
 run_resume() {
     separator "断点续传模式"
 
-    local input_file="results/content_test.json"
+    local input_file="results/arxiv_results_content.json"
+    local latest_analysis="results/arxiv_results_content_analysis.json"
 
     if [[ ! -f $input_file ]]; then
         echo "错误: $input_file 不存在"
         exit 1
     fi
 
-    # 查找最新的 analysis 文件
-    local latest_analysis=$(ls -t results/analysis_*.json 2>/dev/null | head -1)
-
-    if [[ -z "$latest_analysis" ]]; then
-        echo "错误: 未找到历史分析文件"
+    if [[ ! -f "$latest_analysis" ]]; then
+        echo "错误: 未找到历史分析文件: $latest_analysis"
         echo "请先运行一次完整分析"
         exit 1
     fi
@@ -284,16 +277,10 @@ run_resume() {
 run_report() {
     separator "阶段 4: 生成分析报告"
 
-    # 优先使用最新的 analysis 文件
     local analysis_file="results/arxiv_results_content_analysis.json"
 
-    if [[ ! -f $analysis_file ]]; then
-        # 查找最新的 analysis 文件
-        analysis_file=$(ls -t results/analysis_*.json 2>/dev/null | head -1)
-    fi
-
-    if [[ -z "$analysis_file" ]] || [[ ! -f "$analysis_file" ]]; then
-        echo "错误: 未找到分析结果文件"
+    if [[ ! -f "$analysis_file" ]]; then
+        echo "错误: 未找到分析结果文件: $analysis_file"
         echo "请先运行 LLM 分析阶段"
         exit 1
     fi

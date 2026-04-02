@@ -8,13 +8,13 @@
 配置：config.json 中的 llm 节
 
 用法：
-  python scripts/paper_analyzer.py results/content_test.json              # 分析前 3 条（默认详细分析）
-  python scripts/paper_analyzer.py results/content_test.json -n 5        # 分析前 5 条
-  python scripts/paper_analyzer.py results/content_test.json --full      # 全量分析
-  python scripts/paper_analyzer.py results/content_test.json -o results/analysis.json
-  python scripts/paper_analyzer.py results/content_test.json --full     # 断点续传（自动跳过已分析）
-  python scripts/paper_analyzer.py results/content_test.json --concise   # 精简分析（一句话总结）
-  python scripts/paper_analyzer.py results/content_test.json --type frontend  # 按类型分析（frontend=详细, backend=精简）
+  python scripts/paper_analyzer.py results/arxiv_results_content.json              # 分析前 3 条（默认详细分析）
+  python scripts/paper_analyzer.py results/arxiv_results_content.json -n 5        # 分析前 5 条
+  python scripts/paper_analyzer.py results/arxiv_results_content.json --full      # 全量分析
+  python scripts/paper_analyzer.py results/arxiv_results_content.json -o results/arxiv_results_content_analysis.json
+  python scripts/paper_analyzer.py results/arxiv_results_content.json --full     # 断点续传（自动跳过已分析）
+  python scripts/paper_analyzer.py results/arxiv_results_content.json --concise   # 精简分析（一句话总结）
+  python scripts/paper_analyzer.py results/arxiv_results_content.json --type frontend  # 按类型分析（frontend=详细, backend=精简）
 """
 
 from __future__ import annotations
@@ -538,8 +538,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "input",
         nargs="?",
-        default="results/content_test.json",
-        help="输入 JSON 文件（包含论文数据）",
+        default="results/arxiv_results_content.json",
+        help="输入 JSON 文件（包含论文数据，默认: results/arxiv_results_content.json）",
     )
     parser.add_argument(
         "-o", "--output",
