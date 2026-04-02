@@ -119,11 +119,30 @@ python scripts/arxiv_content.py results/arxiv_results.json --full
 
 **配置：** 在 `config.json` 的 `llm` 节配置 API Key 和模型。
 
-**输出字段：**
+#### 分析模式
+
+默认情况下所有类型都使用**详细分析**。
+
+在 `config.json` 的 `analysis.type_modes` 配置：
+
+```json
+"analysis": {
+  "default_mode": "detailed",
+  "type_modes": {
+    "frontend": "detailed",   // 语音前端：详细分析
+    "backend": "concise",     // 语音后端：精简分析
+    "audiollm": "concise"     // AudioLLM：精简分析
+  }
+}
+```
+
+#### 输出字段
+
+**详细模式输出：**
 
 | 字段 | 说明 |
 |------|------|
-| 中文摘要 | 300字以内的中文概括 |
+| 一句话总结 | 300字以内的中文概括 |
 | 核心亮点 | 3-5个 bullet points |
 | 反直觉的发现 | 论文中出人意料的发现 |
 | 论文的局限性/缺陷 | 不足和可改进之处 |
@@ -134,21 +153,36 @@ python scripts/arxiv_content.py results/arxiv_results.json --full
 | 适用场景/应用前景 | 实际应用价值 |
 | 与相关工作的对比 | 横向对比 |
 
+**精简模式输出：**
+
+| 字段 | 说明 |
+|------|------|
+| 一句话总结 | 精辟、通俗的一句话概括 |
+
+#### 使用示例
+
 ```bash
-# 分析前 3 条
+# 默认详细分析前 3 条
 python scripts/paper_analyzer.py results/content_test.json
 
-# 分析前 5 条
-python scripts/paper_analyzer.py results/content_test.json -n 5
+# 精简分析前 5 条（一句话总结）
+python scripts/paper_analyzer.py results/content_test.json -n 5 --concise
 
-# 全量分析
-python scripts/paper_analyzer.py results/content_test.json --full
+# 全量精简分析
+python scripts/paper_analyzer.py results/content_test.json --full --concise
+
+# 按类型选择模式
+python scripts/paper_analyzer.py results/content_test.json --type frontend  # 详细
+python scripts/paper_analyzer.py results/content_test.json --type backend   # 精简
 
 # 指定输出路径
 python scripts/paper_analyzer.py results/content_test.json -o results/analysis.json
 
-# 调整请求间隔
-python scripts/paper_analyzer.py results/content_test.json -n 10 --delay 2.0
+# 调整并发和间隔
+python scripts/paper_analyzer.py results/content_test.json -n 10 -c 5 --delay 0.5
+
+# 失败重试次数
+python scripts/paper_analyzer.py results/content_test.json --max-retries 3
 ```
 
 依赖：`pip install openai`

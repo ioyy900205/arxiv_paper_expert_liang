@@ -4,7 +4,7 @@
     "api_key": "sk-cp-fd69b9FhHc4qoj4zChtxVL9ex91GIy6LkZEY-ycixpNVhDNXZOrFVM_My-xO5QrbRtYculfBNmZ6rSsAGBKFvFOz0F-GgFkFun4Tj2a4I_vHVyzru0pU7q4",
     "base_url": "https://api.minimax.chat/v1",
     "model": "MiniMax-M2.7-highspeed",
-    "max_tokens": 4096,
+    "max_tokens": 16384,
     "temperature": 0.7
   },
   "search": {
@@ -20,6 +20,17 @@
   },
   "request": {
     "delay_seconds": 3
+  },
+  "analysis": {
+    "default_mode": "detailed",
+    "concurrency": 5,
+    "delay": 1.0,
+    "max_retries": 3,
+    "type_modes": {
+      "frontend": "detailed",
+      "backend": "detailed",
+      "audiollm": "detailed"
+    }
   },
   "keywords": {
     "frontend": {

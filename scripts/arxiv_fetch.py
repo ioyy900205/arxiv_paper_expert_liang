@@ -121,6 +121,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--topic")
     p.add_argument("--start-date")
     p.add_argument("--end-date")
+    p.add_argument("--days", type=int, help="搜索最近 N 天（覆盖 start-date/end-date）")
     p.add_argument("--max-results", type=int)
     p.add_argument("--page-size", type=int)
     p.add_argument("--output")
@@ -220,8 +221,6 @@ def main() -> None:
     _KW = cfg.get("keywords", _DEFAULT_KW)
 
     topic      = args.topic      or _resolve(cfg, "search.topic")
-    start_date = args.start_date or _resolve(cfg, "search.start_date")
-    end_date   = args.end_date   or _resolve(cfg, "search.end_date")
     max_res    = args.max_results or _resolve(cfg, "search.max_results", 100)
     page_size  = args.page_size  or _resolve(cfg, "search.page_size", 100)
     delay      = _resolve(cfg, "request.delay_seconds", 3)
@@ -229,6 +228,19 @@ def main() -> None:
     out_name   = Path(args.output).name if args.output else _resolve(cfg, "output.filename", "arxiv_results.json")
     out_dir    = args.config.parent / "results"
     out_dir.mkdir(exist_ok=True)
+
+    # 处理 --days 参数
+    if args.days:
+        from datetime import timedelta
+        end_dt = datetime.now(timezone.utc)
+        start_dt = end_dt - timedelta(days=args.days)
+        start_date = start_dt.strftime("%Y-%m-%d")
+        end_date = end_dt.strftime("%Y-%m-%d")
+        topic = args.topic or _resolve(cfg, "search.topic")
+    else:
+        start_date = args.start_date or _resolve(cfg, "search.start_date")
+        end_date = args.end_date or _resolve(cfg, "search.end_date")
+        topic = args.topic or _resolve(cfg, "search.topic")
 
     if not topic or not start_date or not end_date:
         raise ValueError("缺少 topic 或日期参数，请检查 config.json 或使用命令行参数。")
