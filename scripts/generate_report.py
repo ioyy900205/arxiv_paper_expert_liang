@@ -13,6 +13,7 @@ arxiv 论文分析报告生成器
 
 
 import json
+import argparse
 
 from pathlib import Path
 
@@ -1146,12 +1147,41 @@ def generate_html_report(papers):
 
 
 def main():
-    if not INPUT_FILE.exists():
-        print(f"错误: 输入文件不存在: {INPUT_FILE}")
+    parser = argparse.ArgumentParser(description="生成 arXiv 论文分析报告")
+    parser.add_argument("input", nargs="?", default="results/analysis_5days.json",
+                        help="输入的 analysis JSON 文件（默认: results/analysis_5days.json）")
+    parser.add_argument("-o", "--output-dir", default="results",
+                        help="输出目录（默认: results）")
+    args = parser.parse_args()
+
+    input_file = Path(args.input)
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if not input_file.exists():
+        # 尝试在 results 目录下查找最新的 analysis 文件
+        results_dir = Path("results")
+        if results_dir.exists():
+            analysis_files = sorted(results_dir.glob("analysis_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if analysis_files:
+                input_file = analysis_files[0]
+                print(f"未找到指定文件，自动使用最新分析结果: {input_file}")
+
+    if not input_file.exists():
+        print(f"错误: 输入文件不存在: {input_file}")
         return
 
-    print(f"读取数据: {INPUT_FILE}")
-    with open(INPUT_FILE, "r", encoding="utf-8") as f:
+    # 确定输出文件名
+    if input_file.stem.startswith("analysis"):
+        output_name = input_file.stem.replace("analysis", "report")
+    else:
+        output_name = "paper_analysis_report"
+
+    output_html = output_dir / f"{output_name}.html"
+    output_md = output_dir / f"{output_name}.md"
+
+    print(f"读取数据: {input_file}")
+    with open(input_file, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     if isinstance(data, list):
@@ -1164,12 +1194,12 @@ def main():
 
     print(f"共 {len(papers)} 篇论文")
 
-    print(f"生成 HTML 报告: {OUTPUT_HTML}")
-    with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
+    print(f"生成 HTML 报告: {output_html}")
+    with open(output_html, "w", encoding="utf-8") as f:
         f.write(generate_html_report(papers))
 
-    print(f"生成 Markdown 报告: {OUTPUT_MD}")
-    with open(OUTPUT_MD, "w", encoding="utf-8") as f:
+    print(f"生成 Markdown 报告: {output_md}")
+    with open(output_md, "w", encoding="utf-8") as f:
         f.write(generate_markdown_report(papers))
 
     print("完成!")

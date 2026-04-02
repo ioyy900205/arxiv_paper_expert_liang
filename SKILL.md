@@ -40,8 +40,8 @@ scripts/
 ├── arxiv_content.py     # 全文抓取：HTML 优先 + PDF 回退
 ├── paper_analyzer.py    # LLM 分析：调用 MiniMax API 分析论文
 ├── generate_report.py   # 报告生成：HTML/Markdown 格式报告
-├── run_pipeline.sh       # 完整流水线：一键执行全部
-└── test_llm.py          # LLM 测试：快速验证 API Key 可用性
+├── run_pipeline.sh      # 完整流水线：一键执行全部
+└── test_llm.py         # LLM 测试：快速验证 API Key 可用性
 ```
 
 ## 典型使用触发
@@ -73,6 +73,9 @@ bash scripts/run_pipeline.sh --step content
 # 分析前 10 篇论文
 bash scripts/run_pipeline.sh --step analyze -n 10
 
+# 仅生成报告
+bash scripts/run_pipeline.sh --step report
+
 # 断点续传（跳过已分析）
 bash scripts/run_pipeline.sh --step analyze --resume
 
@@ -80,7 +83,9 @@ bash scripts/run_pipeline.sh --step analyze --resume
 bash scripts/run_pipeline.sh --step analyze --full
 ```
 
-### 阶段 1：搜索论文（arxiv_fetch.py）
+### 阶段说明
+
+#### 阶段 1：搜索论文（arxiv_fetch.py）
 
 按主题、分类和时间范围搜索 arXiv 论文。
 
@@ -95,7 +100,9 @@ python scripts/arxiv_fetch.py --start-date 2026-01-01 --end-date 2026-03-31 --ma
 - 三分类：frontend（语音前端）/ backend（语音后端）/ audiollm（音频大模型）
 - 支持 `--split` 输出三个分类文件
 
-### 阶段 2：全文抓取（arxiv_content.py）
+**输出：** `results/arxiv_results.json`
+
+#### 阶段 2：全文抓取（arxiv_content.py）
 
 从 arXiv 获取论文全文，提取为纯文本。
 
@@ -110,7 +117,9 @@ python scripts/arxiv_content.py results/arxiv_results.json --full # 全部
 - 移除参考文献和致谢
 - 保留章节结构
 
-### 阶段 3：LLM 分析（paper_analyzer.py）
+**输出：** `results/arxiv_results_content.json`
+
+#### 阶段 3：LLM 分析（paper_analyzer.py）
 
 调用 LLM 对论文进行深度分析，输出结构化的分析结果。
 
@@ -126,17 +135,27 @@ python scripts/paper_analyzer.py results/arxiv_results_content.json --concise # 
 
 **断点续传：** 自动跳过已分析的论文，中断后可继续
 
-### 阶段 4：报告生成（generate_report.py）
+**输出：** `results/arxiv_results_content_analysis.json`
+
+#### 阶段 4：报告生成（generate_report.py）
 
 将分析结果生成为 HTML 和 Markdown 格式的报告。
 
 ```bash
-python scripts/generate_report.py
+python scripts/generate_report.py                                      # 使用默认输入
+python scripts/generate_report.py results/arxiv_results_content_analysis.json  # 指定输入
 ```
 
 **输出：**
-- `results/paper_analysis_report.html` - 浅色主题 HTML 报告
-- `results/paper_analysis_report.md` - 带目录的 Markdown 报告
+- `results/arxiv_results_content_report.html` - 浅色主题 HTML 报告
+- `results/arxiv_results_content_report.md` - 带目录的 Markdown 报告
+
+**HTML 报告特点：**
+- 分类颜色标签
+- 目录导航
+- 响应式设计
+- 论文卡片可折叠
+- 回到顶部按钮
 
 ## 输出文件格式
 

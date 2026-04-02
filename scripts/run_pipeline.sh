@@ -72,10 +72,10 @@ while [[ $# -gt 0 ]]; do
             echo "用法: $0 [选项]"
             echo ""
             echo "选项:"
-            echo "  --step <stage>    执行阶段: all|fetch|content|analyze"
+            echo "  --step <stage>    执行阶段: all|fetch|content|analyze|report"
             echo "  -n <num>          分析论文数量（默认 3）"
             echo "  --full            分析全部论文"
-            echo "  -c <num>          LLM 并发数（默认 3）"
+            echo "  -c <num>          LLM 并发数（默认 5）"
             echo "  --delay <sec>     请求间隔（默认 1.0 秒）"
             echo "  --days <num>      搜索最近 N 天论文（默认 7）"
             echo "  --resume          断点续传"
@@ -215,9 +215,8 @@ run_analyze() {
         log "将分析前 $LIMIT 篇论文"
     fi
 
-    # 确定输出文件
-    local timestamp=$(date '+%Y%m%d_%H%M%S')
-    local output_file="results/analysis_${timestamp}.json"
+    # 确定输出文件（与 results/arxiv_results_content.json 对应）
+    local output_file="results/arxiv_results_content_analysis.json"
 
     log "执行 paper_analyzer.py..."
     log "输出文件: $output_file"
@@ -279,6 +278,35 @@ run_resume() {
 }
 
 # =============================================================================
+# 阶段 4: 生成报告
+# =============================================================================
+
+run_report() {
+    separator "阶段 4: 生成分析报告"
+
+    # 优先使用最新的 analysis 文件
+    local analysis_file="results/arxiv_results_content_analysis.json"
+
+    if [[ ! -f $analysis_file ]]; then
+        # 查找最新的 analysis 文件
+        analysis_file=$(ls -t results/analysis_*.json 2>/dev/null | head -1)
+    fi
+
+    if [[ -z "$analysis_file" ]] || [[ ! -f "$analysis_file" ]]; then
+        echo "错误: 未找到分析结果文件"
+        echo "请先运行 LLM 分析阶段"
+        exit 1
+    fi
+
+    log "执行 generate_report.py..."
+    log "输入文件: $analysis_file"
+
+    python3 scripts/generate_report.py "$analysis_file"
+
+    log "报告生成完成"
+}
+
+# =============================================================================
 # 主流程
 # =============================================================================
 
@@ -293,6 +321,7 @@ main() {
             run_fetch
             run_content
             run_analyze
+            run_report
             ;;
         fetch)
             run_fetch
@@ -307,9 +336,12 @@ main() {
                 run_analyze
             fi
             ;;
+        report)
+            run_report
+            ;;
         *)
             echo "错误: 未知的步骤 '$STEP'"
-            echo "可用选项: all, fetch, content, analyze"
+            echo "可用选项: all, fetch, content, analyze, report"
             exit 1
             ;;
     esac
