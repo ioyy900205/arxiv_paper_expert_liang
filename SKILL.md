@@ -2,7 +2,7 @@
 name: arxiv_paper_expert
 description: 面向中文自然语言的 arXiv 论文研究技能。用于把"看看最近有什么新论文""帮我找一下某个主题的论文""最近一周 XX 领域有哪些新工作"这类请求，转成可执行的论文搜索、信息提取与简要分析流程。
 author: liang
-version: 0.1.0
+version: 1.0.0
 requirements:
   python: 3.8+
   packages:
@@ -15,9 +15,6 @@ environment_variables:
   - name: ARXIV_API_BASE
     default: http://export.arxiv.org/api/query
     description: arXiv API 地址
-  - name: ARXIV_CACHE_DIR
-    default: ./cache
-    description: 缓存目录
 network_access: true
 ---
 
@@ -29,21 +26,22 @@ network_access: true
 
 使用这个 skill 的典型场景：
 
-- 找某个时间段内的某个主题论文 list
+- 找某个时间段内的某个主题论文列表
 - 找某个时间点/时间段内某个领域的新论文
 - 对一批论文做信息提取和整理
-- 调用 AI（anan_01 agent）对论文做深度分析
+- 调用 LLM 对论文做深度分析
 - 生成结构化论文简报
 
 ## 模块架构
 
 ```
 scripts/
-├── arxiv_fetch.py       # 搜索功能：按主题/分类/时间搜索论文
-├── arxiv_content.py     # 内容抓取：HTML 优先 + PDF 回退获取正文
+├── arxiv_fetch.py       # 论文搜索：按主题/分类/时间搜索
+├── arxiv_content.py     # 全文抓取：HTML 优先 + PDF 回退
 ├── paper_analyzer.py    # LLM 分析：调用 MiniMax API 分析论文
-├── test_llm.py          # LLM 测试：快速验证 API Key 可用性
-└── ...
+├── generate_report.py   # 报告生成：HTML/Markdown 格式报告
+├── run_pipeline.sh       # 完整流水线：一键执行全部
+└── test_llm.py          # LLM 测试：快速验证 API Key 可用性
 ```
 
 ## 典型使用触发
@@ -52,145 +50,186 @@ scripts/
 - 最近一周有什么新的 LLM 论文？
 - 2024年3月份关于强化学习的论文
 - 帮我搜搜这个领域最近的工作
-- 帮我分析一下这批论文（投喂给 LLM）
+- 帮我分析一下这批论文
 - 帮我生成论文简报
 
 ## 工作流程
 
-### 1. 搜索阶段（search.py）
-
-支持三种搜索方式：
-
-| 方式 | 说明 | 实现 |
-|------|------|------|
-| 主题搜索 | 按关键词搜索 | arXiv API query 参数 |
-| 分类浏览 | 按分类浏览最近论文 | 抓取 arxiv.org/list/{cat}/recent |
-| 组合搜索 | 分类 + 关键词 + 时间 | API 参数组合 |
-
-时间表达支持：
-- 自然语言：`"最近一周"` → `(today-7, today)`
-- 绝对日期：`"2024年3月"` → `(2024-03-01, 2024-03-31)`
-- 时间窗口：`"2024年3月前后"` → `(2024-02-15, 2024-03-15)`
-
-### 2. 提取阶段（extractor.py）
-
-从搜索结果中提取：
-- 标题 (title)
-- 作者 (authors)
-- 摘要 (abstract)
-- 分类 (categories)
-- 发表日期 (published)
-- arXiv ID
-- PDF 链接
-- 更新日期 (updated)
-
-### 2.1 内容抓取（arxiv_content.py）
-
-通过 `arxiv_content.py` 获取论文全文，策略如下：
-
-| 来源 | 优先级 | 备注 |
-|------|--------|------|
-| HTML 版本 | 高 | `https://arxiv.org/html/{id}` |
-| PDF 版本 | 低（回退） | 当 HTML 不存在时自动使用 |
-
-输出 JSON 每条记录增加三个字段：
-- `content` — 正文纯文本
-- `html_url` — 实际来源 URL（HTML 或 PDF）
-- `content_source` — 来源标识（`html` / `pdf` / `none`）
-
-正文末尾的参考文献节会被自动去除（通过关键词 `References`、`Bibliography`、`Acknowledgment` 检测）。
+### 完整流水线（推荐）
 
 ```bash
-# 处理前 3 条
-python scripts/arxiv_content.py results/arxiv_results.json
+# 进入项目目录
+cd arxiv_paper_expert_liang
 
-# 指定条数
-python scripts/arxiv_content.py results/arxiv_results.json -n 10 -o results/content.json
+# 完整流程：搜索 → 抓取 → 分析 → 报告
+bash scripts/run_pipeline.sh
 
-# 全量处理
-python scripts/arxiv_content.py results/arxiv_results.json --full
+# 仅搜索最近 7 天论文
+bash scripts/run_pipeline.sh --step fetch --days 7
+
+# 仅抓取全文
+bash scripts/run_pipeline.sh --step content
+
+# 分析前 10 篇论文
+bash scripts/run_pipeline.sh --step analyze -n 10
+
+# 断点续传（跳过已分析）
+bash scripts/run_pipeline.sh --step analyze --resume
+
+# 分析全部论文
+bash scripts/run_pipeline.sh --step analyze --full
 ```
 
-依赖：`pip install requests beautifulsoup4 pdfminer.six`
+### 阶段 1：搜索论文（arxiv_fetch.py）
 
-### 3. 分析阶段（paper_analyzer.py）
+按主题、分类和时间范围搜索 arXiv 论文。
 
-通过 `paper_analyzer.py` 调用 MiniMax LLM 对论文进行深度分析。
+```bash
+python scripts/arxiv_fetch.py --days 30                    # 最近 30 天
+python scripts/arxiv_fetch.py --start-date 2026-01-01 --end-date 2026-03-31 --max-results 600 --split
+```
 
-**配置：** 在 `config.json` 的 `llm` 节配置 API Key 和模型。
+**功能特点：**
+- 自动分页获取
+- 429 限流自动等待重试
+- 三分类：frontend（语音前端）/ backend（语音后端）/ audiollm（音频大模型）
+- 支持 `--split` 输出三个分类文件
 
-#### 分析模式
+### 阶段 2：全文抓取（arxiv_content.py）
 
-默认情况下所有类型都使用**详细分析**。
+从 arXiv 获取论文全文，提取为纯文本。
 
-在 `config.json` 的 `analysis.type_modes` 配置：
+```bash
+python scripts/arxiv_content.py results/arxiv_results.json -n 3   # 前 3 篇
+python scripts/arxiv_content.py results/arxiv_results.json --full # 全部
+```
+
+**功能特点：**
+- HTML 优先（可复制文本），PDF 回退
+- 自动版本回退（当前版本不可用时尝试其他版本）
+- 移除参考文献和致谢
+- 保留章节结构
+
+### 阶段 3：LLM 分析（paper_analyzer.py）
+
+调用 LLM 对论文进行深度分析，输出结构化的分析结果。
+
+```bash
+python scripts/paper_analyzer.py results/arxiv_results_content.json -n 5      # 分析 5 篇
+python scripts/paper_analyzer.py results/arxiv_results_content.json --full    # 全量分析
+python scripts/paper_analyzer.py results/arxiv_results_content.json --concise # 精简模式
+```
+
+**分析模式：**
+- **详细分析**：10+ 个维度的深度评审（一句话总结、研究动机、核心亮点、反直觉发现、关键技术、实验结果、局限性、论文结论、适用场景、犀利点评）
+- **精简分析**：一句话总结
+
+**断点续传：** 自动跳过已分析的论文，中断后可继续
+
+### 阶段 4：报告生成（generate_report.py）
+
+将分析结果生成为 HTML 和 Markdown 格式的报告。
+
+```bash
+python scripts/generate_report.py
+```
+
+**输出：**
+- `results/paper_analysis_report.html` - 浅色主题 HTML 报告
+- `results/paper_analysis_report.md` - 带目录的 Markdown 报告
+
+## 输出文件格式
+
+### arxiv_results.json
 
 ```json
-"analysis": {
-  "default_mode": "detailed",
-  "type_modes": {
-    "frontend": "detailed",   // 语音前端：详细分析
-    "backend": "concise",     // 语音后端：精简分析
-    "audiollm": "concise"     // AudioLLM：精简分析
+[
+  {
+    "arxiv_id": "2604.01155v1",
+    "title": "论文标题",
+    "authors": "作者1, 作者2",
+    "published": "2026-04-01",
+    "summary": "摘要...",
+    "primary_category": "cs.SD",
+    "categories": "cs.SD, eess.AS",
+    "pdf_url": "https://arxiv.org/pdf/...",
+    "category": "frontend"
+  }
+]
+```
+
+### arxiv_results_content.json
+
+```json
+[
+  {
+    "arxiv_id": "2604.01155v1",
+    "title": "论文标题",
+    "authors": "作者1, 作者2",
+    "content": "论文全文内容...",
+    "html_url": "https://arxiv.org/html/...",
+    "content_source": "html",
+    "used_arxiv_id": "2604.01155v1"
+  }
+]
+```
+
+### arxiv_results_content_analysis.json
+
+```json
+[
+  {
+    "arxiv_id": "2604.01155v1",
+    "title": "论文标题",
+    "category": "frontend",
+    "analysis": {
+      "一句话总结": "...",
+      "研究动机": {"结论": "...", "展开": "..."},
+      "核心亮点": [{"描述": "...", "金句": "..."}, ...],
+      "反直觉发现": [{"发现": "...", "为何反直觉": "..."}, ...],
+      "关键技术": {"结论": "...", "展开": "..."},
+      "实验结果": {"结论": "...", "展开": "..."},
+      "局限性/缺陷": ["...", "..."],
+      "论文结论": {"结论": "...", "价值判断": "..."},
+      "适用场景": {"结论": "...", "边界条件": "..."},
+      "犀利点评": "..."
+    },
+    "mode": "detailed",
+    "model_used": "MiniMax-M2.7-highspeed",
+    "tokens_used": 12345
+  }
+]
+```
+
+## 配置说明
+
+### config.json
+
+```json
+{
+  "llm": {
+    "provider": "minimax",
+    "api_key": "your-api-key",
+    "base_url": "https://api.minimax.chat/v1",
+    "model": "MiniMax-M2.7-highspeed",
+    "max_tokens": 16384,
+    "temperature": 0.7
+  },
+  "search": {
+    "topic": "cat:cs.SD AND (all:\"speech enhancement\" OR ...)",
+    "start_date": "2025-01-01",
+    "end_date": "2026-04-01",
+    "max_results": 200
   }
 }
 ```
 
-#### 输出字段
+## 依赖
 
-**详细模式输出：**
-
-| 字段 | 说明 |
-|------|------|
-| 一句话总结 | 300字以内的中文概括 |
-| 核心亮点 | 3-5个 bullet points |
-| 反直觉的发现 | 论文中出人意料的发现 |
-| 论文的局限性/缺陷 | 不足和可改进之处 |
-| 论文结论 | 作者的主要结论 |
-| 研究动机/解决的问题 | 背景和动机 |
-| 关键技术或方法 | 核心技术 |
-| 实验结果摘要 | 实验设置和结果 |
-| 适用场景/应用前景 | 实际应用价值 |
-| 与相关工作的对比 | 横向对比 |
-
-**精简模式输出：**
-
-| 字段 | 说明 |
-|------|------|
-| 一句话总结 | 精辟、通俗的一句话概括 |
-
-#### 使用示例
-
-```bash
-# 默认详细分析前 3 条
-python scripts/paper_analyzer.py results/content_test.json
-
-# 精简分析前 5 条（一句话总结）
-python scripts/paper_analyzer.py results/content_test.json -n 5 --concise
-
-# 全量精简分析
-python scripts/paper_analyzer.py results/content_test.json --full --concise
-
-# 按类型选择模式
-python scripts/paper_analyzer.py results/content_test.json --type frontend  # 详细
-python scripts/paper_analyzer.py results/content_test.json --type backend   # 精简
-
-# 指定输出路径
-python scripts/paper_analyzer.py results/content_test.json -o results/analysis.json
-
-# 调整并发和间隔
-python scripts/paper_analyzer.py results/content_test.json -n 10 -c 5 --delay 0.5
-
-# 失败重试次数
-python scripts/paper_analyzer.py results/content_test.json --max-retries 3
 ```
-
-依赖：`pip install openai`
-
-### 4. 总结阶段（summarizer.py）
-
-生成结构化简报，包含：
-- 论文概览
-- 主题分布
-- 关键发现
-- 技术趋势
+requests>=2.28.0
+feedparser>=6.0.0
+beautifulsoup4>=4.11.0
+pdfminer.six>=20221105
+openai>=1.0.0
+```

@@ -14,10 +14,10 @@
 
 ```
 arxiv_paper_expert_liang/
-├── config.json              # 唯一配置文件
+├── config.json              # 唯一配置文件（LLM、搜索参数）
 ├── requirements.txt         # Python 依赖
 ├── README.md
-├── SKILL.md                 # Cursor 技能说明
+├── SKILL.md                 # OpenClaw/Cursor 技能说明
 ├── scripts/
 │   ├── arxiv_fetch.py       # 论文搜索与抓取
 │   ├── arxiv_content.py     # 论文全文抓取（HTML/PDF）
@@ -26,6 +26,38 @@ arxiv_paper_expert_liang/
 │   ├── run_pipeline.sh      # 完整流水线脚本
 │   └── test_llm.py          # LLM API 测试
 └── results/                 # 输出目录
+    ├── arxiv_results.json              # 搜索结果
+    ├── arxiv_results_content.json      # 全文抓取结果
+    ├── arxiv_results_content_analysis.json  # LLM 分析结果
+    ├── paper_analysis_report.html     # HTML 报告
+    └── paper_analysis_report.md        # Markdown 报告
+```
+
+## 工作流程
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        完整流水线                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. arxiv_fetch.py                                              │
+│     输入: config.json                                            │
+│     输出: results/arxiv_results.json                              │
+│           ↓                                                      │
+│  2. arxiv_content.py                                            │
+│     输入: results/arxiv_results.json                              │
+│     输出: results/arxiv_results_content.json                      │
+│           ↓                                                      │
+│  3. paper_analyzer.py                                           │
+│     输入: results/arxiv_results_content.json                      │
+│     输出: results/arxiv_results_content_analysis.json             │
+│           ↓                                                      │
+│  4. generate_report.py                                          │
+│     输入: results/arxiv_results_content_analysis.json             │
+│     输出: paper_analysis_report.html                              │
+│           paper_analysis_report.md                                │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## 快速开始
@@ -51,7 +83,7 @@ pip install -r requirements.txt
     "temperature": 0.7
   },
   "search": {
-    "topic": "cat:cs.SD AND (all:\"speech enhancement\" OR ti:\"speech\" ...)",
+    "topic": "cat:cs.SD AND (all:\"speech enhancement\" OR all:\"audio source separation\" OR ...)",
     "start_date": "2025-01-01",
     "end_date": "2026-04-01",
     "max_results": 200
@@ -74,6 +106,9 @@ bash scripts/run_pipeline.sh --step content
 # 分析前 10 篇论文
 bash scripts/run_pipeline.sh --step analyze -n 10
 
+# 分析全部论文
+bash scripts/run_pipeline.sh --step analyze --full
+
 # 断点续传
 bash scripts/run_pipeline.sh --step analyze --resume
 ```
@@ -85,13 +120,13 @@ bash scripts/run_pipeline.sh --step analyze --resume
 按主题、分类和时间范围搜索 arXiv 论文。
 
 ```bash
-python scripts/arxiv_fetch.py                          # 使用默认配置
 python scripts/arxiv_fetch.py --days 30                 # 最近 30 天
+python scripts/arxiv_fetch.py --days 7                   # 最近 7 天（默认）
 python scripts/arxiv_fetch.py --start-date 2026-01-01 --end-date 2026-03-31 --max-results 600 --split
 ```
 
 **功能特点：**
-- 自动分页获取
+- 自动分页获取（每页 100 条）
 - 429 限流自动等待重试
 - 三分类：frontend（语音前端）/ backend（语音后端）/ audiollm（音频大模型）
 - 支持 `--split` 输出三个分类文件
@@ -117,14 +152,16 @@ python scripts/arxiv_content.py results/arxiv_results.json --full --delay 1.0
 调用 LLM 对论文进行深度分析，输出结构化的分析结果。
 
 ```bash
-python scripts/paper_analyzer.py results/content_test.json -n 5      # 分析 5 篇
-python scripts/paper_analyzer.py results/content_test.json --full    # 全量分析
-python scripts/paper_analyzer.py results/content_test.json --concise # 精简模式
+python scripts/paper_analyzer.py results/arxiv_results_content.json -n 5      # 分析 5 篇
+python scripts/paper_analyzer.py results/arxiv_results_content.json --full    # 全量分析
+python scripts/paper_analyzer.py results/arxiv_results_content.json --concise # 精简模式
 ```
 
 **分析模式：**
 - **详细分析**: 10+ 个维度的深度评审（一句话总结、研究动机、核心亮点、反直觉发现、关键技术、实验结果、局限性、论文结论、适用场景、犀利点评）
 - **精简分析**: 一句话总结
+
+**断点续传：** 自动跳过已分析的论文，中断后可继续
 
 **输出字段：**
 
@@ -141,8 +178,6 @@ python scripts/paper_analyzer.py results/content_test.json --concise # 精简模
 | 适用场景 | 应用场景和边界条件 |
 | 犀利点评 | 综合评价 |
 
-**断点续传：** 自动跳过已分析的论文，中断后可继续
-
 ### generate_report.py - 报告生成
 
 将分析结果生成为 HTML 和 Markdown 格式的报告。
@@ -152,13 +187,14 @@ python scripts/generate_report.py
 ```
 
 **输出：**
-- `results/paper_analysis_report.html` - 浅色主题 HTML 报告
+- `results/paper_analysis_report.html` - 浅色主题 HTML 报告（可折叠）
 - `results/paper_analysis_report.md` - 带目录的 Markdown 报告
 
 **HTML 报告特点：**
 - 分类颜色标签
 - 目录导航
 - 响应式设计
+- 论文卡片可折叠
 - 回到顶部按钮
 
 ### run_pipeline.sh - 完整流水线
@@ -170,36 +206,17 @@ bash scripts/run_pipeline.sh                    # 完整流程
 bash scripts/run_pipeline.sh --step fetch        # 仅搜索
 bash scripts/run_pipeline.sh --step content      # 仅抓取
 bash scripts/run_pipeline.sh --step analyze      # 仅分析
-bash scripts/run_pipeline.sh --full              # 全量分析
+bash scripts/run_pipeline.sh --full             # 全量分析
 bash scripts/run_pipeline.sh --days 30           # 最近 30 天
-bash scripts/run_pipeline.sh --resume            # 断点续传
+bash scripts/run_pipeline.sh --resume           # 断点续传
 ```
 
-## 工作流程
+### test_llm.py - LLM API 测试
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        完整流水线                                │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  1. arxiv_fetch.py                                              │
-│     输入: config.json                                            │
-│     输出: results/arxiv_results.json                              │
-│           ↓                                                      │
-│  2. arxiv_content.py                                            │
-│     输入: results/arxiv_results.json                              │
-│     输出: results/content_*.json                                  │
-│           ↓                                                      │
-│  3. paper_analyzer.py                                           │
-│     输入: results/content_*.json                                  │
-│     输出: results/analysis_*.json                                 │
-│           ↓                                                      │
-│  4. generate_report.py                                          │
-│     输入: results/analysis_*.json                                 │
-│     输出: paper_analysis_report.html                              │
-│           paper_analysis_report.md                                │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+快速验证 MiniMax API Key 是否可用。
+
+```bash
+python scripts/test_llm.py
 ```
 
 ## 输出文件格式
@@ -222,7 +239,7 @@ bash scripts/run_pipeline.sh --resume            # 断点续传
 ]
 ```
 
-### content_*.json
+### arxiv_results_content.json
 
 ```json
 [
@@ -238,7 +255,7 @@ bash scripts/run_pipeline.sh --resume            # 断点续传
 ]
 ```
 
-### analysis_*.json
+### arxiv_results_content_analysis.json
 
 ```json
 [

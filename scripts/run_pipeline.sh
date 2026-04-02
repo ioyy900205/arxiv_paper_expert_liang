@@ -107,9 +107,16 @@ separator() {
 check_dependencies() {
     log "检查依赖..."
     local missing=()
-    for pkg in requests feedparser beautifulsoup4 pdfminer openai; do
+    # 注意：beautifulsoup4 的导入名是 bs4
+    local pkg_map="beautifulsoup4:bs4:pdfminer.six:pdfminer"
+    for pkg in requests feedparser bs4 pdfminer openai; do
         if ! python3 -c "import $pkg" 2>/dev/null; then
-            missing+=("$pkg")
+            # 映射回显示名
+            case $pkg in
+                bs4) missing+=("beautifulsoup4") ;;
+                pdfminer) missing+=("pdfminer.six") ;;
+                *) missing+=("$pkg") ;;
+            esac
         fi
     done
     if [[ ${#missing[@]} -gt 0 ]]; then
