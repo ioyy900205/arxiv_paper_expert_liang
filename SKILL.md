@@ -10,6 +10,7 @@ requirements:
     - feedparser
     - beautifulsoup4
     - pdfminer.six
+    - openai
 environment_variables:
   - name: ARXIV_API_BASE
     default: http://export.arxiv.org/api/query
@@ -38,11 +39,11 @@ network_access: true
 
 ```
 scripts/
-├── search.py          # 搜索功能：按主题/分类/时间搜索论文
-├── extractor.py       # 信息提取：从搜索结果中提取元信息
-├── arxiv_content.py   # 内容抓取：HTML 优先 + PDF 回退获取正文
-├── analyzer.py        # AI 分析：调用 anan_01 agent 分析论文
-└── summarizer.py      # 总结生成：整合信息生成结构化简报
+├── arxiv_fetch.py       # 搜索功能：按主题/分类/时间搜索论文
+├── arxiv_content.py     # 内容抓取：HTML 优先 + PDF 回退获取正文
+├── paper_analyzer.py    # LLM 分析：调用 MiniMax API 分析论文
+├── test_llm.py          # LLM 测试：快速验证 API Key 可用性
+└── ...
 ```
 
 ## 典型使用触发
@@ -51,6 +52,8 @@ scripts/
 - 最近一周有什么新的 LLM 论文？
 - 2024年3月份关于强化学习的论文
 - 帮我搜搜这个领域最近的工作
+- 帮我分析一下这批论文（投喂给 LLM）
+- 帮我生成论文简报
 
 ## 工作流程
 
@@ -110,9 +113,45 @@ python scripts/arxiv_content.py results/arxiv_results.json --full
 
 依赖：`pip install requests beautifulsoup4 pdfminer.six`
 
-### 3. 分析阶段（analyzer.py）
+### 3. 分析阶段（paper_analyzer.py）
 
-调用 OpenClaw anan_01 agent 进行深度分析。
+通过 `paper_analyzer.py` 调用 MiniMax LLM 对论文进行深度分析。
+
+**配置：** 在 `config.json` 的 `llm` 节配置 API Key 和模型。
+
+**输出字段：**
+
+| 字段 | 说明 |
+|------|------|
+| 中文摘要 | 300字以内的中文概括 |
+| 核心亮点 | 3-5个 bullet points |
+| 反直觉的发现 | 论文中出人意料的发现 |
+| 论文的局限性/缺陷 | 不足和可改进之处 |
+| 论文结论 | 作者的主要结论 |
+| 研究动机/解决的问题 | 背景和动机 |
+| 关键技术或方法 | 核心技术 |
+| 实验结果摘要 | 实验设置和结果 |
+| 适用场景/应用前景 | 实际应用价值 |
+| 与相关工作的对比 | 横向对比 |
+
+```bash
+# 分析前 3 条
+python scripts/paper_analyzer.py results/content_test.json
+
+# 分析前 5 条
+python scripts/paper_analyzer.py results/content_test.json -n 5
+
+# 全量分析
+python scripts/paper_analyzer.py results/content_test.json --full
+
+# 指定输出路径
+python scripts/paper_analyzer.py results/content_test.json -o results/analysis.json
+
+# 调整请求间隔
+python scripts/paper_analyzer.py results/content_test.json -n 10 --delay 2.0
+```
+
+依赖：`pip install openai`
 
 ### 4. 总结阶段（summarizer.py）
 

@@ -1,4 +1,12 @@
 {
+  "llm": {
+    "provider": "minimax",
+    "api_key": "sk-cp-fd69b9FhHc4qoj4zChtxVL9ex91GIy6LkZEY-ycixpNVhDNXZOrFVM_My-xO5QrbRtYculfBNmZ6rSsAGBKFvFOz0F-GgFkFun4Tj2a4I_vHVyzru0pU7q4",
+    "base_url": "https://api.minimax.chat/v1",
+    "model": "MiniMax-M2.7-highspeed",
+    "max_tokens": 4096,
+    "temperature": 0.7
+  },
   "search": {
     "topic": "cat:cs.SD AND (all:\"speech enhancement\" OR all:\"audio source separation\" OR all:\"voice activity detection\" OR all:\"speech dereverberation\" OR all:\"beamforming\" OR all:\"acoustic echo cancellation\" OR all:\"audio front-end\" OR all:\"audio preprocessing\" OR ti:\"speech\" OR ti:\"audio\" OR ti:\"voice\")",
     "start_date": "2025-01-01",
