@@ -226,7 +226,7 @@ def main() -> None:
     page_size  = args.page_size  or _resolve(cfg, "search.page_size", 100)
     delay      = _resolve(cfg, "request.delay_seconds", 3)
     out_fmt    = args.format
-    out_name   = args.output      or _resolve(cfg, "output.filename", "arxiv_results.json")
+    out_name   = Path(args.output).name if args.output else _resolve(cfg, "output.filename", "arxiv_results.json")
     out_dir    = args.config.parent / "results"
     out_dir.mkdir(exist_ok=True)
 

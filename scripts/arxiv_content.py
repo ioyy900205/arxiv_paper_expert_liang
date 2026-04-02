@@ -29,7 +29,40 @@ from pdfminer.high_level import extract_text
 
 BASE_HTML = "https://arxiv.org/html/{id}"
 BASE_PDF = "https://arxiv.org/pdf/{id}.pdf"
+BASE_ABSTRACT = "https://arxiv.org/abs/{id}"
 HEADERS = {"User-Agent": "arxiv-fetch/1.0"}
+
+
+def find_available_version(arxiv_id: str, delay: float = 1.0) -> Optional[str]:
+    """尝试找到可用的论文版本。如果当前版本不可用，尝试其他版本。"""
+    import re
+    base_id = re.sub(r'v\d+$', '', arxiv_id)
+    
+    # 获取所有可用版本
+    url = BASE_ABSTRACT.format(id=arxiv_id)
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=30)
+        if r.status_code == 200:
+            # 从页面中提取所有版本链接
+            versions = re.findall(r'href="/html/(' + re.escape(base_id) + r'v\d+)"', r.text)
+            if versions:
+                return versions[0]  # 返回最新版本
+    except:
+        pass
+    
+    # 如果页面解析失败，尝试常见的版本
+    for v in ['', 'v2', 'v3', 'v4', 'v5']:
+        test_id = base_id + ('v1' if not v and not arxiv_id.endswith('v1') else v)
+        if test_id == arxiv_id:
+            continue
+        try:
+            r = requests.get(BASE_HTML.format(id=test_id), headers=HEADERS, timeout=10)
+            if r.status_code == 200:
+                return test_id
+        except:
+            continue
+    
+    return None
 
 
 def fetch_html(arxiv_id: str, delay: float = 3.0) -> Optional[str]:
@@ -103,6 +136,8 @@ def strip_references(text: str) -> str:
             earliest = m.start()
     if earliest < len(text):
         text = text[:earliest]
+    # 清理末尾多余的空行
+    text = text.rstrip()
     return text
 
 
@@ -132,12 +167,11 @@ def parse_html(raw: str, arxiv_id: str) -> Optional[str]:
         ["h1", "h2", "h3", "h4", "p"],
         string=re.compile(r"^(reference|bibliography|acknowledgments?)", re.I)
     ):
-        # 把它所在的父 section 也删掉
-        parent = ref_h.find_parent(["section", "div"])
-        if parent:
-            parent.decompose()
-        else:
-            ref_h.decompose()
+        # 先收集所有后续兄弟元素，避免 decompose 后找不到
+        for sibling in ref_h.find_next_siblings():
+            sibling.decompose()
+        # 再删除参考文献标题本身
+        ref_h.decompose()
 
     # 提取纯文本，保留换行结构
     lines = []
@@ -165,6 +199,7 @@ def run(input_path: Path,
         content = None
         html_url = None
         source = "none"
+        used_arxiv_id = arxiv_id  # 记录实际使用的版本
 
         raw_html = fetch_html(arxiv_id, delay)
         if raw_html is not None:
@@ -188,15 +223,43 @@ def run(input_path: Path,
                     print(f"PDF OK ({len(content):,} chars)")
                 else:
                     print("PDF 解析失败")
-            else:
-                print("HTML / PDF 均不可用")
 
-        entry = {**paper, "html_url": html_url, "content": content, "content_source": source}
+        # HTML 和 PDF 都失败 → 尝试其他版本
+        if content is None:
+            print("尝试其他版本...")
+            alt_version = find_available_version(arxiv_id, delay)
+            if alt_version:
+                print(f"  找到可用版本: {alt_version}")
+                used_arxiv_id = alt_version
+                raw_html = fetch_html(alt_version, delay)
+                if raw_html is not None:
+                    content = parse_html(raw_html, alt_version)
+                    html_url = BASE_HTML.format(id=alt_version)
+                    source = "html"
+                if content is None:
+                    pdf_bytes = fetch_pdf_bytes(alt_version, delay)
+                    if pdf_bytes is not None:
+                        content = parse_pdf(pdf_bytes)
+                        if content:
+                            content = strip_references(content)
+                            html_url = BASE_PDF.format(id=alt_version)
+                            source = "pdf"
+                if content:
+                    print(f"  {source.upper()} OK ({len(content):,} chars)")
+                else:
+                    print("  所有版本均失败")
+
+        if content is None:
+            print("HTML / PDF 均不可用")
+
+        # 更新 paper 记录，使用实际获取的版本 ID
+        paper_copy = {**paper, "used_arxiv_id": used_arxiv_id}
+        entry = {**paper_copy, "html_url": html_url, "content": content, "content_source": source}
         results.append(entry)
         if i < len(papers) - 1:
             time.sleep(delay)
 
-    out_path = output_path or input_path.parent / f"{input_path.stem}_content.json"
+    out_path = output_path if output_path else input_path.parent / f"{input_path.stem}_content.json"
     out_path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\n已保存: {out_path}")
 
@@ -212,7 +275,7 @@ if __name__ == "__main__":
 
     run(
         input_path=Path(args.input),
-        output_path=Path(args.output) if args.output else None,
+        output_path=Path(args.input).parent / f"{Path(args.input).stem}_content.json" if not args.output else Path(args.output),
         limit=None if args.full else args.limit,
         delay=args.delay,
     )
