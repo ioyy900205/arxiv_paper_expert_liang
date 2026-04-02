@@ -19,6 +19,8 @@ from pathlib import Path
 
 from datetime import datetime
 
+from dateutil import parser as date_parser
+
 from collections import defaultdict
 
 
@@ -26,6 +28,78 @@ from collections import defaultdict
 # ============ Category 排序（前端 > LLM > 后端 > 其他）============
 
 CATEGORY_ORDER = ["frontend", "llm", "backend", "audiollm", "speech", "nlp", "cv", "multimodal"]
+
+
+def get_paper_date_range(papers):
+    """从论文数据中提取时间范围，返回 (最早日期, 最晚日期, 日期范围字符串)"""
+    dates = []
+    for paper in papers:
+        # 优先使用 paper 中的 published 字段
+        published = paper.get("published", "")
+        if not published:
+            # 回退：从 summary 或其他字段尝试提取
+            published = paper.get("updated", "")
+        if published:
+            try:
+                dt = date_parser.parse(published)
+                dates.append(dt)
+            except Exception:
+                continue
+
+    if not dates:
+        return None, None, None
+
+    min_date = min(dates)
+    max_date = max(dates)
+
+    if min_date.date() == max_date.date():
+        range_str = min_date.strftime("%Y-%m-%d")
+    else:
+        range_str = f"{min_date.strftime('%Y-%m-%d')} ~ {max_date.strftime('%Y-%m-%d')}"
+
+    return min_date, max_date, range_str
+
+
+def load_date_info_from_source(input_file):
+    """
+    从源文件中读取论文的时间信息。
+    尝试从 analysis JSON（最新生成的）读取，
+    如果没有 published 字段，则回退到 content JSON 或 results JSON。
+    """
+    input_path = Path(input_file)
+    analysis_file = input_path
+
+    # 尝试从 analysis JSON 获取 published 字段
+    if analysis_file.exists():
+        with open(analysis_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list) and data:
+            first_paper = data[0]
+            if "published" in first_paper and first_paper.get("published"):
+                # analysis JSON 有 published 字段，直接返回
+                return get_paper_date_range(data)
+
+    # 回退：从 content JSON 获取
+    content_file = analysis_file.parent / "arxiv_results_content.json"
+    if content_file.exists():
+        with open(content_file, "r", encoding="utf-8") as f:
+            content_data = json.load(f)
+        if isinstance(content_data, list) and content_data:
+            first_paper = content_data[0]
+            if "published" in first_paper and first_paper.get("published"):
+                return get_paper_date_range(content_data)
+
+    # 再回退：从 results JSON 获取
+    results_file = analysis_file.parent / "arxiv_results.json"
+    if results_file.exists():
+        with open(results_file, "r", encoding="utf-8") as f:
+            results_data = json.load(f)
+        if isinstance(results_data, list) and results_data:
+            first_paper = results_data[0]
+            if "published" in first_paper and first_paper.get("published"):
+                return get_paper_date_range(results_data)
+
+    return None, None, None
 
 
 
@@ -129,8 +203,7 @@ def get_sorted_categories(categories_dict):
 
 
 
-def generate_toc_markdown(papers):
-
+def generate_toc_markdown(papers, date_range_str=None):
     """生成 Markdown 目录"""
 
     categories = defaultdict(list)
@@ -147,7 +220,12 @@ def generate_toc_markdown(papers):
 
     lines.append("# 论文分析报告\n")
 
-    lines.append(f"_由 AI 自动生成 | {datetime.now().strftime('%Y-%m-%d %H:%M')}_\n")
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+    if date_range_str:
+        lines.append(f"_论文时间范围: {date_range_str} | 生成时间: {now_str}_\n")
+    else:
+        lines.append(f"_由 AI 自动生成 | {now_str}_\n")
 
 
 
@@ -185,7 +263,7 @@ def generate_toc_markdown(papers):
 
 
 
-def generate_markdown_report(papers):
+def generate_markdown_report(papers, date_range_str=None):
 
     """生成 Markdown 报告（带目录）"""
 
@@ -201,7 +279,7 @@ def generate_markdown_report(papers):
 
     lines = []
 
-    lines.append(generate_toc_markdown(papers))
+    lines.append(generate_toc_markdown(papers, date_range_str))
 
 
 
@@ -875,7 +953,7 @@ def generate_paper_html(paper):
 
 
 
-def generate_html_report(papers):
+def generate_html_report(papers, date_range_str=None):
     """生成完整的 HTML 报告"""
     categories = defaultdict(list)
     for paper in papers:
@@ -1067,7 +1145,10 @@ def generate_html_report(papers):
     html += '    <div class="container">\n'
     html += '        <header class="header">\n'
     html += '            <h1>论文分析报告</h1>\n'
-    html += '            <p class="subtitle">由 AI 自动生成 | ' + str(len(papers)) + ' 篇论文 | ' + datetime.now().strftime('%Y-%m-%d %H:%M') + '</p>\n'
+    if date_range_str:
+        html += '            <p class="subtitle">论文时间范围: ' + date_range_str + ' | ' + str(len(papers)) + ' 篇论文 | 生成时间: ' + datetime.now().strftime('%Y-%m-%d %H:%M') + '</p>\n'
+    else:
+        html += '            <p class="subtitle">由 AI 自动生成 | ' + str(len(papers)) + ' 篇论文 | ' + datetime.now().strftime('%Y-%m-%d %H:%M') + '</p>\n'
     html += '        </header>\n'
     html += '\n'
     html += '        <div class="toc">\n'
@@ -1177,13 +1258,20 @@ def main():
 
     print(f"共 {len(papers)} 篇论文")
 
+    # 提取论文时间范围（优先从 analysis JSON 读取，回退到 content/results JSON）
+    min_date, max_date, date_range_str = load_date_info_from_source(input_file)
+    if date_range_str:
+        print(f"论文时间范围: {date_range_str}")
+    else:
+        print("无法获取论文时间范围")
+
     print(f"生成 HTML 报告: {output_html}")
     with open(output_html, "w", encoding="utf-8") as f:
-        f.write(generate_html_report(papers))
+        f.write(generate_html_report(papers, date_range_str))
 
     print(f"生成 Markdown 报告: {output_md}")
     with open(output_md, "w", encoding="utf-8") as f:
-        f.write(generate_markdown_report(papers))
+        f.write(generate_markdown_report(papers, date_range_str))
 
     print("完成!")
 
