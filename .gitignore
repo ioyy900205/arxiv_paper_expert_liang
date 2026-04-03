@@ -25,3 +25,6 @@ Thumbs.db
 
 # Generated results
 results/
+
+# Logs
+logs/
