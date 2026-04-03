@@ -93,13 +93,13 @@ description: 面向中文自然语言的 arXiv 论文检索、整理、分析与
 
 ```bash
 # 默认：检索语音/音频方向（等同于 --domain speech）
-python -m src
+python -m src --full
 
 # 切换到金融量化方向
-python -m src --domain quant
+python -m src --domain quant --full
 
 # 同时检索语音 + 量化两个领域
-python -m src --domain both
+python -m src --domain both --full
 ```
 
 > `--domain` 参数会覆盖 `config.json` 中的 `search.domain`，但不会改变 config 文件本身。
@@ -110,13 +110,13 @@ python -m src --domain both
 
 ```bash
 # 检索最近一周（语音方向，默认 domain）
-python -m src --start-date 2026-03-27 --end-date 2026-04-03
+python -m src --start-date 2026-03-27 --end-date 2026-04-03 --full
 
 # 检索最近一个月（量化方向）
-python -m src --domain quant --start-date 2026-03-03 --end-date 2026-04-03
+python -m src --domain quant --start-date 2026-03-03 --end-date 2026-04-03 --full
 
 # 检索特定月份（两个领域）
-python -m src --domain both --start-date 2026-03-01 --end-date 2026-03-31
+python -m src --domain both --start-date 2026-03-01 --end-date 2026-03-31 --full
 ```
 
 > `--start-date` / `--end-date` 会覆盖 `config.json` 中的对应值。
@@ -127,20 +127,20 @@ python -m src --domain both --start-date 2026-03-01 --end-date 2026-03-31
 
 ```bash
 # 只检 speech enhancement 相关
-python -m src --query "cat:eess.AS AND all:\"speech enhancement\""
+python -m src --query "cat:eess.AS AND all:\"speech enhancement\"" --full
 
 # 混查任意方向
-python -m src --query "(cat:eess.AS OR cat:cs.CL) AND all:\"LLM\""
+python -m src --query "(cat:eess.AS OR cat:cs.CL) AND all:\"LLM\"" --full
 ```
 
 ### 常用场景速查
 
 | 需求 | 推荐命令 |
 |------|----------|
-| 最近一周语音论文 | `python -m src --start-date 2026-03-27 --end-date 2026-04-03` |
-| 最近一周量化论文 | `python -m src --domain quant --start-date 2026-03-27 --end-date 2026-04-03` |
-| 最近两周两个领域都看 | `python -m src --domain both --start-date 2026-03-20 --end-date 2026-04-03` |
-| 自定义查询 | `python -m src --query "..."` |
+| 最近一周语音论文 | `python -m src --start-date 2026-03-27 --end-date 2026-04-03 --full` |
+| 最近一周量化论文 | `python -m src --domain quant --start-date 2026-03-27 --end-date 2026-04-03 --full` |
+| 最近两周两个领域都看 | `python -m src --domain both --start-date 2026-03-20 --end-date 2026-04-03 --full` |
+| 自定义查询 | `python -m src --query "..." --full` |
 
 ---
 
