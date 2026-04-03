@@ -1,6 +1,6 @@
 # arxiv_paper_expert_liang
 
-面向中文自然语言的 arXiv 论文研究与简报生成技能。支持搜索、下载、分析论文，并生成结构化的分析报告。
+面向中文自然语言的 arXiv 论文研究与简报生成技能。支持语音/音频和金融量化两大领域的论文搜索、下载、分析，并生成结构化的分析报告。
 
 ## 功能特性
 
@@ -9,28 +9,36 @@
 - **LLM 分析**: 调用 MiniMax LLM 对论文进行深度分析
 - **报告生成**: 生成 HTML 和 Markdown 格式的分析报告
 - **自动化流水线**: 一键执行完整的论文研究流程
+- **多领域支持**: 语音/音频深度学习 + 金融量化 AI
 
 ## 目录结构
 
 ```
 arxiv_paper_expert_liang/
-├── config.json              # 唯一配置文件（LLM、搜索参数）
-├── requirements.txt         # Python 依赖
-├── README.md
 ├── SKILL.md                 # OpenClaw/Cursor 技能说明
-├── scripts/
-│   ├── arxiv_fetch.py       # 论文搜索与抓取
-│   ├── arxiv_content.py     # 论文全文抓取（HTML/PDF）
-│   ├── paper_analyzer.py    # LLM 论文分析
-│   ├── generate_report.py    # 报告生成（HTML/Markdown）
-│   ├── run_pipeline.sh      # 完整流水线脚本
-│   └── test_llm.py          # LLM API 测试
-└── results/                 # 输出目录
-    ├── arxiv_results.json              # 搜索结果
-    ├── arxiv_results_content.json      # 全文抓取结果
-    ├── arxiv_results_content_analysis.json  # LLM 分析结果
-    ├── arxiv_results_content_report.html     # HTML 报告
-    └── arxiv_results_content_report.md      # Markdown 报告
+├── README.md
+├── config.json              # 唯一配置文件（LLM、搜索参数、分类关键词）
+├── requirements.txt         # Python 依赖
+├── logs/                    # 日志输出目录（自动创建）
+├── results/                 # 输出目录
+│   ├── arxiv_results.json              # 搜索结果
+│   ├── arxiv_results_content.json      # 全文抓取结果
+│   ├── arxiv_results_content_analysis.json  # LLM 分析结果
+│   ├── arxiv_results_content_report.html     # HTML 报告
+│   └── arxiv_results_content_report.md      # Markdown 报告
+└── src/                     # 唯一入口
+    ├── main.py              # 固定入口：python -m src
+    ├── cli.py               # 参数解析
+    ├── config.py            # 配置读取
+    ├── logger.py            # 日志
+    ├── utils.py             # 通用工具
+    ├── pipeline/runner.py   # Pipeline 编排
+    ├── services/
+    │   ├── arxiv_fetcher.py    # 论文搜索
+    │   ├── content_extractor.py # 全文抓取
+    │   ├── paper_analyzer.py    # LLM 分析
+    │   └── report_generator.py  # 报告生成
+    └── models/schemas.py    # 数据结构
 ```
 
 ## 工作流程
@@ -41,7 +49,7 @@ arxiv_paper_expert_liang/
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  1. arxiv_fetch.py                                              │
-│     输入: config.json                                            │
+│     输入: config.json（设置 start_date 和 end_date）               │
 │     输出: results/arxiv_results.json                              │
 │           ↓                                                      │
 │  2. arxiv_content.py                                            │
@@ -49,13 +57,13 @@ arxiv_paper_expert_liang/
 │     输出: results/arxiv_results_content.json                      │
 │           ↓                                                      │
 │  3. paper_analyzer.py                                           │
-│     输入: results/arxiv_results_content.json                       │
-│     输出: results/arxiv_results_content_analysis.json              │
+│     输入: results/arxiv_results_content.json                      │
+│     输出: results/arxiv_results_content_analysis.json             │
 │           ↓                                                      │
 │  4. generate_report.py                                          │
-│     输入: results/arxiv_results_content_analysis.json              │
+│     输入: results/arxiv_results_content_analysis.json             │
 │     输出: results/arxiv_results_content_report.html               │
-│           results/arxiv_results_content_report.md                 │
+│           results/arxiv_results_content_report.md                │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -83,152 +91,79 @@ pip install -r requirements.txt
     "temperature": 0.7
   },
   "search": {
-    "topic": "cat:cs.SD AND (all:\"speech enhancement\" OR all:\"audio source separation\" OR ...)",
-    "start_date": "2025-01-01",
-    "end_date": "2026-04-01",
+    "domain": "speech",
+    "topic": {
+      "speech": "(cat:eess.AS OR ...) AND (all:\"speech\" OR all:\"audio\" ...)",
+      "quant": "(cat:q-fin.CP OR ...) AND (all:\"quantitative\" OR ...)"
+    },
+    "start_date": "2026-04-01",
+    "end_date": "2026-04-03",
     "max_results": 200
   }
 }
 ```
 
+**domain 配置说明：**
+
+| 值 | 检索范围 |
+|----|----------|
+| `speech` | 语音/音频（默认） |
+| `quant` | 金融量化 AI |
+| `both` | 两个领域同时检索 |
+
 ### 3. 执行流水线
 
-```bash
-# 完整流程（搜索 → 抓取 → 分析 → 报告）
-bash scripts/run_pipeline.sh
-
-# 仅搜索最近 7 天论文
-bash scripts/run_pipeline.sh --step fetch --days 7
-
-# 仅抓取全文
-bash scripts/run_pipeline.sh --step content
-
-# 分析前 10 篇论文
-bash scripts/run_pipeline.sh --step analyze -n 10
-
-# 仅生成报告
-bash scripts/run_pipeline.sh --step report
-
-# 分析全部论文
-bash scripts/run_pipeline.sh --step analyze --full
-
-# 断点续传
-bash scripts/run_pipeline.sh --step analyze --resume
-```
-
-## 各脚本说明
-
-### arxiv_fetch.py - 论文搜索
-
-按主题、分类和时间范围搜索 arXiv 论文。
+统一入口：`python -m src`（src/main.py）
 
 ```bash
-python scripts/arxiv_fetch.py --days 30                 # 最近 30 天
-python scripts/arxiv_fetch.py --days 7                   # 最近 7 天（默认）
-python scripts/arxiv_fetch.py --start-date 2026-01-01 --end-date 2026-03-31 --max-results 600 --split
+# 默认流程（使用 config.json 中的日期范围）
+python -m src
+
+# 命令行覆盖日期范围
+python -m src --start-date 2026-04-01 --end-date 2026-04-03
+
+# 指定搜索 query
+python -m src --query "cat:cs.SD AND all:\"speech enhancement\""
+
+# 分析全部论文（默认只分析前 3 篇）
+python -m src --full
 ```
 
-**功能特点：**
-- 自动分页获取（每页 100 条）
-- 429 限流自动等待重试
-- 三分类：frontend（语音前端）/ backend（语音后端）/ audiollm（音频大模型）
-- 支持 `--split` 输出三个分类文件
+## CLI 参数说明
 
-**输出：** `results/arxiv_results.json`
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--query` | config.json | 搜索 query（覆盖 config） |
+| `--domain` | config.json | 检索领域：speech（默认）/ quant / both |
+| `--start-date` | config.json | 搜索开始日期 (YYYY-MM-DD) |
+| `--end-date` | config.json | 搜索结束日期 (YYYY-MM-DD) |
+| `--max-results` | 200 | 最大搜索论文数 |
+| `--limit` | 3 | 单次分析论文数（0 = 全部） |
+| `--concurrency` | 5 | LLM 并发请求数 |
+| `--delay` | 1.0 | 请求间隔（秒） |
+| `--max-retries` | 3 | 单篇最大重试次数 |
+| `--full` | false | 分析全部论文（等同于 `--limit 0`） |
 
-### arxiv_content.py - 全文抓取
+## 服务模块（内部使用）
 
-从 arXiv 获取论文全文，提取为纯文本。
+各服务模块通过 `src/pipeline/runner.py` 编排，也可独立测试：
 
-```bash
-python scripts/arxiv_content.py results/arxiv_results.json -n 3   # 前 3 篇
-python scripts/arxiv_content.py results/arxiv_results.json --full # 全部
-python scripts/arxiv_content.py results/arxiv_results.json --full --delay 1.0
-```
+| 模块 | 文件 | 功能 |
+|------|------|------|
+| 论文搜索 | `src/services/arxiv_fetcher.py` | 按 query / 日期搜索 arXiv |
+| 全文抓取 | `src/services/content_extractor.py` | HTML 优先 + PDF 回退 |
+| LLM 分析 | `src/services/paper_analyzer.py` | 深度分析 + 断点续传 |
+| 报告生成 | `src/services/report_generator.py` | Markdown + HTML 双格式 |
 
-**功能特点：**
-- HTML 优先（可复制文本），PDF 回退
-- 自动版本回退（当前版本不可用时尝试其他版本）
-- 移除参考文献和致谢
-- 保留章节结构
+流程产物（按顺序）：
 
-**输出：** `results/arxiv_results_content.json`
-
-### paper_analyzer.py - LLM 分析
-
-调用 LLM 对论文进行深度分析，输出结构化的分析结果。
-
-```bash
-python scripts/paper_analyzer.py results/arxiv_results_content.json -n 5      # 分析 5 篇
-python scripts/paper_analyzer.py results/arxiv_results_content.json --full    # 全量分析
-python scripts/paper_analyzer.py results/arxiv_results_content.json --concise # 精简模式
-```
-
-**分析模式：**
-- **详细分析**: 10+ 个维度的深度评审（一句话总结、研究动机、核心亮点、反直觉发现、关键技术、实验结果、局限性、论文结论、适用场景、犀利点评）
-- **精简分析**: 一句话总结
-
-**断点续传：** 自动跳过已分析的论文，中断后可继续
-
-**输出：** `results/arxiv_results_content_analysis.json`
-
-**输出字段：**
-
-| 字段 | 说明 |
-|------|------|
-| 一句话总结 | 核心价值概括 |
-| 研究动机 | 要解决的问题和重要性 |
-| 核心亮点 | 3-5 个创新点 |
-| 反直觉发现 | 打破常规认知的结论 |
-| 关键技术 | 核心技术原理 |
-| 实验结果 | 实验设置和结果 |
-| 局限性/缺陷 | 不足和改进方向 |
-| 论文结论 | 作者的核心结论 |
-| 适用场景 | 应用场景和边界条件 |
-| 犀利点评 | 综合评价 |
-
-### generate_report.py - 报告生成
-
-将分析结果生成为 HTML 和 Markdown 格式的报告。
-
-```bash
-python scripts/generate_report.py                                      # 使用默认输入（results/analysis_5days.json）
-python scripts/generate_report.py results/arxiv_results_content_analysis.json  # 指定输入文件
-```
-
-**输出：**
-- `results/arxiv_results_content_report.html` - 浅色主题 HTML 报告（可折叠）
-- `results/arxiv_results_content_report.md` - 带目录的 Markdown 报告
-
-**HTML 报告特点：**
-- 分类颜色标签
-- 目录导航
-- 响应式设计
-- 论文卡片可折叠
-- 回到顶部按钮
-
-### run_pipeline.sh - 完整流水线
-
-一键执行完整的论文研究流程。
-
-```bash
-bash scripts/run_pipeline.sh                    # 完整流程
-bash scripts/run_pipeline.sh --step fetch        # 仅搜索
-bash scripts/run_pipeline.sh --step content      # 仅抓取
-bash scripts/run_pipeline.sh --step analyze      # 仅分析
-bash scripts/run_pipeline.sh --step report       # 仅生成报告
-bash scripts/run_pipeline.sh --full             # 全量分析
-bash scripts/run_pipeline.sh --days 30           # 最近 30 天
-bash scripts/run_pipeline.sh --resume           # 断点续传
-```
-
-### test_llm.py - LLM API 测试
-
-快速验证 MiniMax API Key 是否可用。
-
-```bash
-python scripts/test_llm.py
-```
+| 阶段 | 文件 | 说明 |
+|------|------|------|
+| 搜索 | `results/arxiv_results.json` | 原始搜索结果 |
+| 全文 | `results/arxiv_results_content.json` | HTML/PDF 提取文本 |
+| 分析 | `results/arxiv_results_content_analysis.json` | LLM 结构化分析 |
+| 报告 | `results/arxiv_results_content_report.html` | 可交互 HTML 报告 |
+| 报告 | `results/arxiv_results_content_report.md` | Markdown 报告 |
 
 ## 输出文件格式
 
@@ -274,6 +209,7 @@ python scripts/test_llm.py
     "arxiv_id": "2604.01155v1",
     "title": "论文标题",
     "category": "frontend",
+    "published": "2026-04-01T00:00:00Z",
     "analysis": {
       "一句话总结": "...",
       "研究动机": {"结论": "...", "展开": "..."},
@@ -286,7 +222,6 @@ python scripts/test_llm.py
       "适用场景": {"结论": "...", "边界条件": "..."},
       "犀利点评": "..."
     },
-    "mode": "detailed",
     "model_used": "MiniMax-M2.7-highspeed",
     "tokens_used": 12345
   }
@@ -300,7 +235,8 @@ python scripts/test_llm.py
 ```json
 {
   "search": {
-    "topic": "arXiv 查询语句（支持 all:, ti:, au:, cat:, submittedDate:）",
+    "domain": "speech",
+    "topic": { ... },
     "start_date": "开始日期（YYYY-MM-DD）",
     "end_date": "结束日期（YYYY-MM-DD）",
     "max_results": 200,
@@ -308,6 +244,16 @@ python scripts/test_llm.py
   }
 }
 ```
+
+**domain 配置：**
+
+| 值 | 检索范围 |
+|----|----------|
+| `speech` | 语音/音频/eess（默认） |
+| `quant` | 金融量化/q-fin |
+| `both` | 两个领域同时检索 |
+
+> **命令行参数优先级高于 config.json**：`python -m src --domain quant` 会覆盖 `config.json` 中的 `domain` 设置。
 
 ### config.json 分类关键词
 
@@ -322,12 +268,17 @@ python scripts/test_llm.py
     "backend": {
       "context": ["speech recognition", "tts", ...]
     },
-    "audiollm": ["llm", "gpt-", "multimodal llm", ...]
+    "audiollm": ["llm", "gpt-", "multimodal llm", ...],
+    "quant": {
+      "title_core": ["quantitative trading", "portfolio optimization", ...],
+      "title_ai": ["reinforcement learning trading", "deep learning finance", ...],
+      "summary_core": ["quantitative finance", "finrl", ...]
+    }
   }
 }
 ```
 
-**分类优先级：** audiollm > frontend > backend
+**分类优先级：** audiollm > quant > frontend > backend
 
 ## 依赖
 
@@ -337,6 +288,7 @@ feedparser>=6.0.0
 beautifulsoup4>=4.11.0
 pdfminer.six>=20221105
 openai>=1.0.0
+python-dateutil>=2.8.0
 ```
 
 ## License
